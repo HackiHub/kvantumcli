@@ -10,8 +10,8 @@ import (
 // CreateProjectRequest is the body for POST /projects.
 type CreateProjectRequest struct {
 	Name     string   `json:"name"`
-	ParentID *string  `json:"parentId,omitempty"`
-	Icon     *string  `json:"icon,omitempty"`
+	ParentID *string  `json:"parentId"`
+	Icon     *string  `json:"icon"`
 	Tags     []string `json:"tags,omitempty"`
 }
 
