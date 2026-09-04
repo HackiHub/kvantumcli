@@ -1,6 +1,6 @@
 package main
 
-import "github.com/hackihub/kvantumci-cli/internal/cli"
+import "github.com/hackihub/kvantumcli/internal/cli"
 
 func main() {
 	cli.Execute()

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hackihub/kvantumci-cli/internal/config"
+	"github.com/hackihub/kvantumcli/internal/config"
 )
 
 func writeTempConfig(t *testing.T, apiURL, token, tenantID string) string {

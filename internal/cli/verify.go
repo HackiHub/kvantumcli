@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/hackihub/kvantumci-cli/internal/api"
-	"github.com/hackihub/kvantumci-cli/internal/output"
+	"github.com/hackihub/kvantumcli/internal/api"
+	"github.com/hackihub/kvantumcli/internal/output"
 )
 
 func newVerifyCmd(opts *rootOptions) *cobra.Command {

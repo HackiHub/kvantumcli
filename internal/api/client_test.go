@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hackihub/kvantumci-cli/internal/api"
+	"github.com/hackihub/kvantumcli/internal/api"
 )
 
 func TestClient_AuthHeadersAndPath(t *testing.T) {
