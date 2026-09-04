@@ -1,4 +1,4 @@
-module github.com/hackihub/kvantumci-cli
+module github.com/hackihub/kvantumcli
 
 go 1.24.5
 

@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/hackihub/kvantumci-cli/internal/api"
+	"github.com/hackihub/kvantumcli/internal/api"
 )
 
 func newProjectCmd(opts *rootOptions) *cobra.Command {
