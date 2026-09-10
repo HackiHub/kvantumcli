@@ -108,6 +108,45 @@ func TestClient_PostJSON(t *testing.T) {
 	if body["name"] != "demo" {
 		t.Fatalf("body: %+v", body)
 	}
+	if _, ok := body["parentId"]; !ok {
+		t.Fatalf("parentId missing: %+v", body)
+	}
+	if body["parentId"] != nil {
+		t.Fatalf("parentId want null, got %#v", body["parentId"])
+	}
+	if _, ok := body["icon"]; !ok {
+		t.Fatalf("icon missing: %+v", body)
+	}
+	if body["icon"] != nil {
+		t.Fatalf("icon want null, got %#v", body["icon"])
+	}
+}
+
+func TestClient_CreateProjectExplicitParentAndIcon(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"id":"1"}`))
+	}))
+	defer srv.Close()
+
+	parentID := "11111111-1111-1111-1111-111111111111"
+	icon := "folder"
+	client := api.New(srv.URL, "pat_abc", "tenant-1")
+	_, err := client.CreateProject(context.Background(), api.CreateProjectRequest{
+		Name:     "child",
+		ParentID: &parentID,
+		Icon:     &icon,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body["parentId"] != parentID {
+		t.Fatalf("parentId: %#v", body["parentId"])
+	}
+	if body["icon"] != icon {
+		t.Fatalf("icon: %#v", body["icon"])
+	}
 }
 
 func TestWaitForVerification_Finished(t *testing.T) {
