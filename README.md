@@ -2,6 +2,39 @@
 
 Agent-safe CLI for the KvantumCI Client API. Single static Go binary for macOS, Linux, and Windows.
 
+## Install
+
+Release tags use the `vMAJOR.MINOR.PATCH` form and contain one binary for each
+supported operating system and architecture.
+
+Linux or macOS:
+
+```bash
+# Latest release (installs to ~/.local/bin)
+curl -fsSL https://raw.githubusercontent.com/HackiHub/kvantumcli/main/install.sh | sh
+
+# A specific release
+curl -fsSL https://raw.githubusercontent.com/HackiHub/kvantumcli/main/install.sh | sh -s -- --version v1.2.3
+```
+
+Set `KVANTUMCI_INSTALL_DIR` or pass `--install-dir` to choose another directory.
+The installer supports Linux and macOS on AMD64 and ARM64.
+
+Windows PowerShell:
+
+```powershell
+# Latest release
+irm https://raw.githubusercontent.com/HackiHub/kvantumcli/main/install.ps1 | iex
+
+# A specific release
+$installer = irm https://raw.githubusercontent.com/HackiHub/kvantumcli/main/install.ps1
+& ([scriptblock]::Create($installer)) -Version v1.2.3
+```
+
+The Windows installer supports AMD64 and ARM64, installs into the current
+user's local application directory, and adds that directory to the user PATH.
+Pass `-NoPathUpdate` to leave PATH unchanged.
+
 ## Build
 
 Requires Go 1.22+.
