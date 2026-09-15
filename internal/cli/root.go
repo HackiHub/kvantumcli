@@ -40,6 +40,7 @@ func newRootCmd(opts *rootOptions) *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.token, "token", "", "Bearer PAT/GAT token (or KVANTUMCI_TOKEN)")
 	cmd.PersistentFlags().StringVar(&opts.tenantID, "tenant-id", "", "Tenant ID for x-tenant-id (or KVANTUMCI_TENANT_ID)")
 
+	cmd.AddCommand(newConfigureCmd(opts))
 	cmd.AddCommand(newLoginCmd(opts))
 	cmd.AddCommand(newHealthCmd(opts))
 	cmd.AddCommand(newWhoamiCmd(opts))
@@ -49,7 +50,7 @@ func newRootCmd(opts *rootOptions) *cobra.Command {
 	cmd.AddCommand(newVerifyCmd(opts))
 	cmd.AddCommand(newSbomCmd(opts))
 	cmd.AddCommand(newResultsCmd(opts))
-
+	cmd.AddCommand(newFindingsCmd(opts))
 
 	return cmd
 }

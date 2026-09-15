@@ -74,27 +74,31 @@ Example config:
 
 Auth: `Authorization: Bearer <token>` plus `x-tenant-id` on Client API calls. `health` is public and does not require a token.
 
-## Login
+## Configure
 
 The API never issues credentials (no username/password or device-code flow). Create a PAT or GAT in the web UI, then:
 
 ```bash
 # Non-interactive
-kvantumci login --api-url https://api.example.com --token pat_... --tenant-id <uuid>
+kvantumci configure --api-url https://api.example.com --token pat_... --tenant-id <uuid>
 
 # Interactive (prompts; existing config used as defaults)
-kvantumci login
+kvantumci configure
 
 # Update only the token (keeps apiUrl and tenantId)
-kvantumci login --token pat_new...
+kvantumci configure --token pat_new...
 ```
 
-By default, login calls `whoami` to verify credentials before writing. Use `--no-verify` to skip. The token is never printed in the JSON result.
+By default, `configure` calls `whoami` to verify credentials before writing. Use
+`--no-verify` to skip. The token is never printed in the JSON result.
+
+`kvantumci login` remains available as a hidden, deprecated compatibility
+command. Use `configure` in scripts and new integrations.
 
 ## Typical flow
 
 ```bash
-kvantumci login --api-url https://api.example.com --token pat_... --tenant-id <uuid>
+kvantumci configure --api-url https://api.example.com --token pat_... --tenant-id <uuid>
 kvantumci health
 kvantumci whoami
 kvantumci project create --name demo
@@ -102,9 +106,16 @@ kvantumci integration list
 kvantumci repo add --project <uuid> --integration <uuid> --name my-repo
 kvantumci verify run --repo <repoId>
 kvantumci verify wait <verificationId>
+kvantumci verify latest --repo <repoId>
 kvantumci sbom get --verification <uuid> --repo <repoId>
-kvantumci results list --verification <uuid>
+kvantumci findings list --verification <uuid> --status fail
+kvantumci results summary --verification <uuid>
 ```
+
+Use `verify latest --repo <repoId>` to retrieve the newest finished run for a
+repository without loading the full verification history. `findings list` is an
+agent-facing list of per-verification rule-check outcomes. For a manager-facing
+roll-up, use `results summary`: its counts are rule outcomes, not bug counts.
 
 Bulk verification requires explicit confirmation:
 
