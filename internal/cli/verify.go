@@ -17,8 +17,30 @@ func newVerifyCmd(opts *rootOptions) *cobra.Command {
 	}
 	cmd.AddCommand(newVerifyRunCmd(opts))
 	cmd.AddCommand(newVerifyListCmd(opts))
+	cmd.AddCommand(newVerifyLatestCmd(opts))
 	cmd.AddCommand(newVerifyGetCmd(opts))
 	cmd.AddCommand(newVerifyWaitCmd(opts))
+	return cmd
+}
+
+func newVerifyLatestCmd(opts *rootOptions) *cobra.Command {
+	var repoID string
+	cmd := &cobra.Command{
+		Use:   "latest",
+		Short: "Get the latest finished verification for a repository",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJSON(func(ctx context.Context) (any, error) {
+				client, _, err := newClient(opts, true)
+				if err != nil {
+					return nil, err
+				}
+				return client.LatestFinishedVerification(ctx, repoID)
+			})
+		},
+	}
+	cmd.Flags().StringVar(&repoID, "repo", "", "Project repository UUID")
+	_ = cmd.MarkFlagRequired("repo")
 	return cmd
 }
 

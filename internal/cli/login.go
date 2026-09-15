@@ -14,7 +14,15 @@ import (
 	"github.com/hackihub/kvantumcli/internal/output"
 )
 
+func newConfigureCmd(opts *rootOptions) *cobra.Command {
+	return newConfigurationCmd(opts, "configure", false)
+}
+
 func newLoginCmd(opts *rootOptions) *cobra.Command {
+	return newConfigurationCmd(opts, "login", true)
+}
+
+func newConfigurationCmd(opts *rootOptions, use string, legacy bool) *cobra.Command {
 	var (
 		apiURL   string
 		token    string
@@ -23,18 +31,18 @@ func newLoginCmd(opts *rootOptions) *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "login",
+		Use:   use,
 		Short: "Save PAT/GAT credentials to the local config file",
 		Long: `Configure the CLI with an API URL, Personal/Group Access Token, and tenant ID.
 
 The API does not issue credentials. Create a PAT or GAT in the web UI (or via
-an already-authenticated session), then run login to store it locally.
+an already-authenticated session), then run configure to store it locally.
 
-Re-running login updates only the values you provide; other config fields are kept.
+Re-running configure updates only the values you provide; other config fields are kept.
 
 Examples:
-  kvantumci login --api-url https://api.example.com --token pat_... --tenant-id <uuid>
-  kvantumci login   # interactive prompts; existing config used as defaults`,
+	kvantumci configure --api-url https://api.example.com --token pat_... --tenant-id <uuid>
+	kvantumci configure   # interactive prompts; existing config used as defaults`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			existing, err := config.LoadFile()
@@ -49,7 +57,7 @@ Examples:
 
 			interactive := isInteractive()
 			anyExplicit := providedAPI != "" || providedToken != "" || providedTenant != ""
-			// Prompt only for a full interactive login (no flags/env). Partial updates use the file.
+			// Prompt only for a full interactive configuration (no flags/env). Partial updates use the file.
 			promptMissing := interactive && !anyExplicit
 
 			apiURLVal, err := resolveLoginField("API URL", "api-url", providedAPI, existing.APIURL, promptMissing)
@@ -65,7 +73,7 @@ Examples:
 				return err
 			}
 
-			// Save merges non-empty fields onto the existing file (re-login preserves omitted keys).
+			// Save merges non-empty fields onto the existing file (reconfiguration preserves omitted keys).
 			update := config.Config{
 				APIURL:   apiURLVal,
 				Token:    tokenVal,
@@ -97,6 +105,10 @@ Examples:
 			}
 			return output.JSON(result)
 		},
+	}
+	if legacy {
+		cmd.Hidden = true
+		cmd.Deprecated = "use 'kvantumci configure' instead"
 	}
 
 	cmd.Flags().StringVar(&apiURL, "api-url", "", "API base URL")

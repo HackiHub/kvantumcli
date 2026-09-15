@@ -10,11 +10,11 @@ Limited, agent-safe scope. **No DELETE endpoints.** **No credential/token/admin 
 
 | CLI Command | Description | API |
 |-------------|-------------|-----|
-| `login [--api-url] [--token] [--tenant-id] [--no-verify]` | Store/update PAT/GAT + tenant in local config (not an API login) | `GET /users/me` (verify unless `--no-verify`) |
+| `configure [--api-url] [--token] [--tenant-id] [--no-verify]` | Store/update PAT/GAT and tenant in local config (not an API login) | `GET /users/me` (verify unless `--no-verify`) |
 | `health` | Check API connectivity | `GET /health` |
 | `whoami` | Current user, tenants, permissions | `GET /users/me` |
 
-**Login note:** The API does not issue credentials. Create a PAT/GAT in the UI, then `login` writes them to the config file. Re-login updates provided fields only.
+**Configure note:** The API does not issue credentials. Create a PAT/GAT in the UI, then `configure` writes it to the config file. Re-running it updates only provided fields. `login` is a hidden, deprecated compatibility alias; use `configure`.
 
 ---
 
@@ -61,6 +61,7 @@ Limited, agent-safe scope. **No DELETE endpoints.** **No credential/token/admin 
 | `verify run --repo <repoId> [--types sbom,cbom,aibom,mlbom]` | Run verification for one repo (default) | `POST /verifications/run/repository/{projectRepositoryId}/{tenantId}` |
 | `verify run --project <projectId> --all-repos [--types ...] [--confirm]` | Run verification for all repos in project (opt-in) | `POST /verifications/run/{projectId}/{tenantId}` |
 | `verify list` | List verification runs | `GET /verifications` |
+| `verify latest --repo <repoId>` | Return the newest finished verification for one repository | `GET /verifications?projectRepositoryId=<repoId>&status=finished&page=1&limit=1` |
 | `verify get <verificationId>` | Single run: status, timing, metadata | `GET /verifications/{id}` |
 | `verify wait <verificationId> [--interval 5s] [--timeout 30m]` | Poll until `finished` or `error` (CLI-side) | `GET /verifications/{id}` (repeated) |
 
@@ -90,21 +91,36 @@ Permission: `billofmaterials:read`
 
 ---
 
-## Results (read-only)
+## Findings and results (read-only)
 
 | CLI Command | Description | API |
 |-------------|-------------|-----|
-| `results list [--verification <uuid>]` | Rule-check results for a run | `GET /results` |
+| `findings list [--verification <uuid>] [--status fail\|pass\|skip] [--page 1] [--limit 10]` | Agent-facing list of per-verification rule-check outcomes; `--status` filters by execution result | `GET /results` |
+| `results summary --verification <uuid>` | Manager-facing roll-up of all rule outcomes for a verification, by severity and execution result | `GET /results` (all pages) |
+| `results list [--verification <uuid>]` | Raw rule-check results for a run | `GET /results` |
 | `results get <resultId>` | Single result with evidence | `GET /results/{id}` |
 
-**Result status:** `pass` \| `fail` \| `skip` — permission: `results:read`
+`findings list --status fail` returns only failed execution outcomes. The
+status filter is the rule execution result: `pass`, `fail`, or `skip`. `page`
+defaults to `1`; `limit` defaults to `10` and accepts values from `1` through
+`100`.
+
+`results summary` fetches every page for the verification and returns JSON with
+`verificationId`, `unit: "ruleOutcomes"`, `totalRuleOutcomes`, top-level
+`totals` (`fail`, `pass`, `skip`), and a `bySeverity` map. The map contains
+`critical`, `high`, `medium`, `low`, and `unclassified` severities; each has
+`fail`, `pass`, and `skip` counts. Skips appear only as counts, with no raw
+outcome rows. These are rule-outcome counts, not bug counts: 63 outcomes do not
+mean 63 distinct bugs.
+
+Permission: `results:read`
 
 ---
 
 ## Typical flow
 
 ```
-project create → integration list → repo add → verify run --repo <id> → verify wait <id> → sbom get → results list
+project create → integration list → repo add → verify run --repo <id> → verify wait <id> → verify latest --repo <id> → findings list --status fail → results summary
 ```
 
 ---
