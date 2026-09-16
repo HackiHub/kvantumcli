@@ -1,121 +1,156 @@
 # kvantumci
 
-Agent-safe CLI for the KvantumCI Client API. Single static Go binary for macOS, Linux, and Windows.
+`kvantumci` is an agent-safe command-line client for the KvantumCI Client API.
+It produces JSON on standard output so scripts can create projects and
+repositories, run verifications, and inspect results without destructive or
+administrative API operations.
 
 ## Install
 
-Release tags use the `vMAJOR.MINOR.PATCH` form and contain one binary for each
-supported operating system and architecture.
+No signed KvantumCI release or release tag is currently published. Do not use a
+`latest` or made-up version bootstrap command. Build from this checkout until a
+published release supplies the signed assets described below.
 
-Linux or macOS:
+The release installers support Linux and macOS on AMD64 and ARM64, and Windows
+on AMD64 and ARM64. They download a release manifest, its detached signature,
+and the platform binary. Installation proceeds only when the manifest signature
+and the binary's SHA-256 hash verify.
 
-```bash
-# Latest release (installs to ~/.local/bin)
-curl -fsSL https://raw.githubusercontent.com/HackiHub/kvantumcli/main/install.sh | sh
+The installer needs a trusted X.509 PEM certificate containing the release
+RSA-3072 public key. Obtain the installer from an immutable, reviewed source and
+the certificate through a trusted channel independent of release assets. Set
+`KVANTUMCI_PUBLIC_KEY_FILE` to the local certificate path before running either
+installer. Do not obtain that certificate from the same mutable release download
+being verified.
 
-# A specific release
-curl -fsSL https://raw.githubusercontent.com/HackiHub/kvantumcli/main/install.sh | sh -s -- --version v1.2.3
-```
+Once a signed release and its immutable bootstrap location are published, use
+the release's documented command and certificate fingerprint. Each versioned
+installer pins the SHA-256 fingerprint of the certificate's DER bytes; it first
+checks the local PEM against that pin, then verifies the manifest signature.
+The installers fail closed if the pinned fingerprint has not been provisioned,
+or if the certificate, signature, manifest, URL, or binary hash is invalid.
+They require HTTPS for initial requests and redirects.
 
-Set `KVANTUMCI_INSTALL_DIR` or pass `--install-dir` to choose another directory.
-The installer supports Linux and macOS on AMD64 and ARM64.
+| Setting | POSIX installer | PowerShell installer | Default |
+| --- | --- | --- | --- |
+| Release version | `--version` or `KVANTUMCI_VERSION` | `-Version` or `KVANTUMCI_VERSION` | `latest` |
+| Destination | `--install-dir` or `KVANTUMCI_INSTALL_DIR` | `-InstallDir` or `KVANTUMCI_INSTALL_DIR` | `~/.local/bin` / `%LocalAppData%\\Programs\\KvantumCI` |
+| GitHub repository | `KVANTUMCI_REPOSITORY` | `KVANTUMCI_REPOSITORY` | `HackiHub/kvantumcli` |
+| Release download root | `KVANTUMCI_DOWNLOAD_BASE_URL` | `KVANTUMCI_DOWNLOAD_BASE_URL` | GitHub release downloads |
+| Trusted certificate | `KVANTUMCI_PUBLIC_KEY_FILE` | `KVANTUMCI_PUBLIC_KEY_FILE` | required |
+| Update Windows user PATH | n/a | `-NoPathUpdate` disables it | enabled |
 
-Windows PowerShell:
-
-```powershell
-# Latest release
-irm https://raw.githubusercontent.com/HackiHub/kvantumcli/main/install.ps1 | iex
-
-# A specific release
-$installer = irm https://raw.githubusercontent.com/HackiHub/kvantumcli/main/install.ps1
-& ([scriptblock]::Create($installer)) -Version v1.2.3
-```
-
-The Windows installer supports AMD64 and ARM64, installs into the current
-user's local application directory, and adds that directory to the user PATH.
-Pass `-NoPathUpdate` to leave PATH unchanged.
+`KVANTUMCI_DOWNLOAD_BASE_URL` must be an absolute HTTPS root containing
+`<tag>/<filename>` paths and serve the same signed manifest and assets. The
+installer resolves `latest` once before fetching any assets, so all downloads
+use one tag. A failed installation leaves an existing destination binary in
+place.
 
 ## Build
 
-Requires Go 1.22+.
+Requires Go 1.24.5.
 
 ```bash
-make build          # → bin/kvantumci
+make build          # bin/kvantumci
 make test
-make dist           # → dist/kvantumci-<os>-<arch>[.exe]
+make dist           # dist/kvantumci-<os>-<arch>[.exe]
 ```
 
 ## Configure
 
-Precedence: flags > environment > config file.
+Configuration values use this precedence: flags, environment, then the local
+config file.
 
-| Setting | Flag | Env | Config key |
-|---------|------|-----|------------|
+| Setting | Flag | Environment | Config key |
+| --- | --- | --- | --- |
 | API base URL | `--api-url` | `KVANTUMCI_API_URL` | `apiUrl` |
 | Bearer PAT/GAT | `--token` | `KVANTUMCI_TOKEN` | `token` |
 | Tenant ID | `--tenant-id` | `KVANTUMCI_TENANT_ID` | `tenantId` |
 | Config path | — | `KVANTUMCI_CONFIG` | — |
 
-Config file locations:
+Config files are located at:
 
-- Linux: `$XDG_CONFIG_HOME/kvantumci/config.json` (or `~/.config/kvantumci/config.json`)
+- Linux: `$XDG_CONFIG_HOME/kvantumci/config.json`, or `~/.config/kvantumci/config.json`
 - macOS: `~/Library/Application Support/kvantumci/config.json`
-- Windows: `%AppData%\kvantumci\config.json`
+- Windows: `%AppData%\\kvantumci\\config.json`
 
-Example config:
+The CLI writes configuration through a private temporary file and rejects a
+config-file symlink. On Unix the saved file mode is `0600`. Windows does not use
+Unix mode bits; protect the containing user profile and any path selected with
+`KVANTUMCI_CONFIG`.
 
-```json
-{
-  "apiUrl": "https://api.example.com",
-  "token": "pat_...",
-  "tenantId": "00000000-0000-0000-0000-000000000000"
-}
-```
-
-Auth: `Authorization: Bearer <token>` plus `x-tenant-id` on Client API calls. `health` is public and does not require a token.
-
-## Configure
-
-The API never issues credentials (no username/password or device-code flow). Create a PAT or GAT in the web UI, then:
+Use interactive configuration when possible. Token entry does not echo in a
+terminal.
 
 ```bash
-# Non-interactive
-kvantumci configure --api-url https://api.example.com --token pat_... --tenant-id <uuid>
-
-# Interactive (prompts; existing config used as defaults)
 kvantumci configure
-
-# Update only the token (keeps apiUrl and tenantId)
-kvantumci configure --token pat_new...
 ```
 
-By default, `configure` calls `whoami` to verify credentials before writing. Use
-`--no-verify` to skip. The token is never printed in the JSON result.
+For automation, inject the secret through the environment rather than passing it
+on the command line:
 
-`kvantumci login` remains available as a hidden, deprecated compatibility
-command. Use `configure` in scripts and new integrations.
+```bash
+KVANTUMCI_TOKEN="$TOKEN" kvantumci configure \
+  --api-url https://api.example.com \
+  --tenant-id 00000000-0000-0000-0000-000000000000
+```
+
+`--token` is retained for compatibility, but shell history and process listings
+can expose its value. `configure` checks `whoami` before saving unless
+`--no-verify` is supplied. It returns only `configPath`, `apiUrl`, `tenantId`,
+and a selected identity when verified; it never returns the token. `login` is a
+hidden deprecated alias for `configure`.
+
+API URLs must be absolute HTTPS URLs. For a local development API only, set
+`KVANTUMCI_ALLOW_HTTP=true`; this is a runtime opt-in and is not saved in the
+config file. It does not disable TLS certificate verification.
+
+Every authenticated Client API request sends both headers:
+
+```text
+Authorization: Bearer <PAT-or-GAT>
+x-tenant-id: <tenant-id>
+```
+
+`health` is public and sends neither header.
 
 ## Typical flow
 
 ```bash
-kvantumci configure --api-url https://api.example.com --token pat_... --tenant-id <uuid>
+kvantumci configure
 kvantumci health
 kvantumci whoami
 kvantumci project create --name demo
 kvantumci integration list
 kvantumci repo add --project <uuid> --integration <uuid> --name my-repo
 kvantumci verify run --repo <repoId>
-kvantumci verify wait <verificationId>
-kvantumci verify latest --repo <repoId>
-kvantumci sbom get --verification <uuid> --repo <repoId>
-kvantumci findings list --verification <uuid> --status fail
-kvantumci results summary --verification <uuid>
 ```
 
-Use `verify latest --repo <repoId>` to retrieve the newest finished run for a
-repository without loading the full verification history. `findings list` is an
-agent-facing list of per-verification rule-check outcomes. For a manager-facing
-roll-up, use `results summary`: its counts are rule outcomes, not bug counts.
+For a repository run, a current typed API response returns the verification ID
+at `.data.verificationId`. Pass that exact value to the next commands:
+
+```bash
+kvantumci verify wait <verificationId>
+kvantumci results summary --verification <verificationId> --timeout 5m
+```
+
+Older repository-run responses can be empty and provide no usable ID.
+`verify latest` finds the newest completed run, which can be an earlier run; do
+not use it to associate a just-requested verification. Project-wide runs retain
+their API response as returned.
+
+`results summary` counts rule outcomes, rather than distinct bugs. A null result
+status is counted as `unknown`, which means the result is incomplete. A successful
+summary exits zero by default. In a gate, use `--fail-on-findings`; JSON is still
+written first, then the command exits nonzero when `fail` or `unknown` outcomes
+exist.
+
+`findings list` is tenant-wide unless `--verification` is supplied:
+
+```bash
+kvantumci findings list --status fail
+kvantumci findings list --verification <verificationId> --status fail
+```
 
 Bulk verification requires explicit confirmation:
 
@@ -125,10 +160,11 @@ kvantumci verify run --project <uuid> --all-repos --confirm
 
 ## Commands
 
-See [CLI_OPERATIONS.md](CLI_OPERATIONS.md) for the full agent-safe command surface. DELETE, credential writes, and admin endpoints are intentionally excluded.
+See [CLI_OPERATIONS.md](CLI_OPERATIONS.md) for the command reference. DELETE,
+credential/token, and administrative writes are excluded.
 
 ## Extending
 
-1. Add an API method under `internal/api/`
-2. Add a cobra command under `internal/cli/`
-3. Register it from `internal/cli/root.go` (or the parent resource command)
+1. Add an API method under `internal/api/`.
+2. Add a Cobra command under `internal/cli/`.
+3. Register it from `internal/cli/root.go` or its parent resource command.

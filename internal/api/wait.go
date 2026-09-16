@@ -49,9 +49,15 @@ func (c *Client) WaitForVerification(ctx context.Context, verificationID string,
 
 	first := true
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, waitContextError(err, verificationID, opts.Timeout)
+		}
 		if !first {
 			if err := sleep(ctx, opts.Interval); err != nil {
-				return nil, fmt.Errorf("timed out waiting for verification %s after %s", verificationID, opts.Timeout)
+				if ctx.Err() != nil {
+					return nil, waitContextError(ctx.Err(), verificationID, opts.Timeout)
+				}
+				return nil, err
 			}
 		}
 		first = false
@@ -59,7 +65,7 @@ func (c *Client) WaitForVerification(ctx context.Context, verificationID string,
 		raw, err := c.GetVerification(ctx, verificationID)
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, fmt.Errorf("timed out waiting for verification %s after %s", verificationID, opts.Timeout)
+				return nil, waitContextError(ctx.Err(), verificationID, opts.Timeout)
 			}
 			return nil, err
 		}
@@ -72,4 +78,11 @@ func (c *Client) WaitForVerification(ctx context.Context, verificationID string,
 			return &WaitResult{Body: raw, Status: status}, nil
 		}
 	}
+}
+
+func waitContextError(err error, verificationID string, timeout time.Duration) error {
+	if err == context.DeadlineExceeded {
+		return fmt.Errorf("timed out waiting for verification %s after %s: %w", verificationID, timeout, err)
+	}
+	return fmt.Errorf("waiting for verification %s: %w", verificationID, err)
 }

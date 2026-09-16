@@ -12,6 +12,7 @@ import (
 )
 
 func TestLatestFinishedVerificationFiltersAndReturnsFirst(t *testing.T) {
+	t.Setenv("KVANTUMCI_ALLOW_HTTP", "true")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/verifications" {
 			t.Errorf("path = %q", r.URL.Path)
@@ -35,6 +36,7 @@ func TestLatestFinishedVerificationFiltersAndReturnsFirst(t *testing.T) {
 }
 
 func TestLatestFinishedVerificationEmpty(t *testing.T) {
+	t.Setenv("KVANTUMCI_ALLOW_HTTP", "true")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[],"total":0}`))
 	}))
@@ -49,11 +51,13 @@ func TestLatestFinishedVerificationEmpty(t *testing.T) {
 
 func TestLatestFinishedVerificationRejectsMalformedData(t *testing.T) {
 	for name, body := range map[string]string{
+		"missing data":     `{}`,
 		"null data":        `{"data":null,"total":0}`,
 		"non-array data":   `{"data":{"id":"v1"},"total":1}`,
 		"non-object entry": `{"data":["v1"],"total":1}`,
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Setenv("KVANTUMCI_ALLOW_HTTP", "true")
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_, _ = w.Write([]byte(body))
 			}))
@@ -65,5 +69,44 @@ func TestLatestFinishedVerificationRejectsMalformedData(t *testing.T) {
 				t.Fatalf("error = %v", err)
 			}
 		})
+	}
+}
+
+func TestRunVerificationForRepoPassesThroughTypedAndLegacyResponses(t *testing.T) {
+	for name, body := range map[string]string{
+		"typed":        `{"statusCode":202,"data":{"verificationId":"v1","outcome":"accepted","scanDispatch":{"status":"accepted"},"bomDispatch":{"status":"accepted"}}}`,
+		"legacy empty": `{}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("KVANTUMCI_ALLOW_HTTP", "true")
+			calls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.Method != http.MethodPost || r.URL.EscapedPath() != "/verifications/run/repository/repo%20%2F%20one/tenant" {
+					t.Errorf("method/path = %s %s", r.Method, r.URL.EscapedPath())
+				}
+				_, _ = w.Write([]byte(body))
+			}))
+			defer srv.Close()
+			raw, err := api.New(srv.URL, "token", "tenant").RunVerificationForRepo(context.Background(), "repo / one", "tenant", api.RunVerificationRequest{Types: []string{"sbom"}})
+			if err != nil || string(raw) != body || calls != 1 {
+				t.Fatalf("raw = %s, calls = %d, error = %v", raw, calls, err)
+			}
+		})
+	}
+}
+
+func TestRunVerificationForRepoDoesNotRetryDispatchFailure(t *testing.T) {
+	t.Setenv("KVANTUMCI_ALLOW_HTTP", "true")
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"message":"dispatch failed","verificationId":"v1"}`))
+	}))
+	defer srv.Close()
+	_, err := api.New(srv.URL, "token", "tenant").RunVerificationForRepo(context.Background(), "repo", "tenant", api.RunVerificationRequest{})
+	if err == nil || calls != 1 {
+		t.Fatalf("calls = %d, error = %v", calls, err)
 	}
 }

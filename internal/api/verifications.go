@@ -45,13 +45,6 @@ func (c *Client) LatestFinishedVerification(ctx context.Context, projectReposito
 	if err != nil {
 		return nil, err
 	}
-	var payload struct {
-		Data  []json.RawMessage `json:"data"`
-		Total int               `json:"total"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("parse verifications response: %w", err)
-	}
 	var shape struct {
 		Data json.RawMessage `json:"data"`
 	}
@@ -62,14 +55,18 @@ func (c *Client) LatestFinishedVerification(ctx context.Context, projectReposito
 	if len(data) == 0 || string(data) == "null" || data[0] != '[' {
 		return nil, fmt.Errorf("parse verifications response: data must be an array")
 	}
-	if len(payload.Data) == 0 {
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, fmt.Errorf("parse verifications response: %w", err)
+	}
+	if len(items) == 0 {
 		return nil, ErrNoFinishedVerification
 	}
 	var object map[string]json.RawMessage
-	if err := json.Unmarshal(payload.Data[0], &object); err != nil || object == nil {
+	if err := json.Unmarshal(items[0], &object); err != nil || object == nil {
 		return nil, fmt.Errorf("parse verifications response: first data item must be an object")
 	}
-	return payload.Data[0], nil
+	return items[0], nil
 }
 
 // GetVerification calls GET /verifications/{id}.
@@ -77,13 +74,36 @@ func (c *Client) GetVerification(ctx context.Context, verificationID string) (js
 	return c.Get(ctx, "/verifications/"+url.PathEscape(verificationID), nil)
 }
 
-// VerificationStatus extracts a top-level "status" field from a verification JSON payload.
+// VerificationStatus extracts data.status from a verification detail response.
 func VerificationStatus(raw json.RawMessage) (string, error) {
 	var payload struct {
-		Status string `json:"status"`
+		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return "", err
+		return "", fmt.Errorf("invalid verification response: %w", err)
 	}
-	return payload.Status, nil
+	data := bytes.TrimSpace(payload.Data)
+	if len(data) == 0 || data[0] != '{' {
+		return "", fmt.Errorf("verification response data must be an object")
+	}
+	var detail struct {
+		Status json.RawMessage `json:"status"`
+	}
+	if err := json.Unmarshal(data, &detail); err != nil {
+		return "", fmt.Errorf("invalid verification data: %w", err)
+	}
+	statusRaw := bytes.TrimSpace(detail.Status)
+	if len(statusRaw) == 0 || statusRaw[0] != '"' {
+		return "", fmt.Errorf("verification response data.status must be a non-empty string")
+	}
+	var status string
+	if err := json.Unmarshal(statusRaw, &status); err != nil || status == "" {
+		return "", fmt.Errorf("verification response data.status must be a non-empty string")
+	}
+	switch status {
+	case "pending", "running", "finished", "error":
+	default:
+		return "", fmt.Errorf("verification response data.status has unknown value %q", status)
+	}
+	return status, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -83,6 +84,10 @@ func (c Config) RequireAPIURL() error {
 	if c.APIURL == "" {
 		return errors.New("api-url is required (--api-url or KVANTUMCI_API_URL)")
 	}
+	u, err := url.Parse(c.APIURL)
+	if err != nil || u.Host == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" || (u.Scheme != "https" && (u.Scheme != "http" || os.Getenv("KVANTUMCI_ALLOW_HTTP") != "true")) {
+		return errors.New("api-url must be an absolute HTTPS URL (set KVANTUMCI_ALLOW_HTTP=true for development HTTP)")
+	}
 	return nil
 }
 
@@ -101,7 +106,9 @@ func LoadFile() (Config, error) {
 
 // Save writes cfg to the config file, creating the directory if needed.
 // Existing unknown JSON keys are not preserved (file only stores known fields).
-// File mode is 0600; directory mode is 0700.
+// On Unix, the replacement is mode 0600. On Windows, it is created with a
+// protected ACL granting access only to the current user and SYSTEM. The
+// parent directory is created when absent but its permissions are not changed.
 func Save(cfg Config) (string, error) {
 	path, err := ConfigFilePath()
 	if err != nil {
@@ -109,6 +116,9 @@ func Save(cfg Config) (string, error) {
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", fmt.Errorf("create config dir: %w", err)
+	}
+	if err := rejectSymlink(path); err != nil {
+		return "", err
 	}
 
 	// Re-login: merge onto existing file so omitted fields stay put.
@@ -136,15 +146,58 @@ func Save(cfg Config) (string, error) {
 		return "", err
 	}
 	data = append(data, '\n')
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	f, err := createPrivateTemp(filepath.Dir(path))
+	if err != nil {
+		return "", fmt.Errorf("create private config file: %w", err)
+	}
+	defer os.Remove(f.Name())
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return "", fmt.Errorf("protect config file: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
 		return "", fmt.Errorf("write config file: %w", err)
 	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return "", fmt.Errorf("sync config file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("close config file: %w", err)
+	}
+	if err := rejectSymlink(path); err != nil {
+		return "", err
+	}
+	if err := os.Rename(f.Name(), path); err != nil {
+		return "", fmt.Errorf("replace config file: %w", err)
+	}
 	return path, nil
+}
+
+func rejectSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect config file: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("config file must not be a symlink")
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("config file must be regular")
+	}
+	return nil
 }
 
 func loadFile() (*FileConfig, error) {
 	path, err := ConfigFilePath()
 	if err != nil {
+		return nil, err
+	}
+	if err := rejectSymlink(path); err != nil {
 		return nil, err
 	}
 	data, err := os.ReadFile(path)

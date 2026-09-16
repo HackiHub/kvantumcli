@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/hackihub/kvantumcli/internal/api"
+	"github.com/hackihub/kvantumcli/internal/output"
 )
 
 func newResultsCmd(opts *rootOptions) *cobra.Command {
@@ -22,9 +24,10 @@ func newResultsCmd(opts *rootOptions) *cobra.Command {
 }
 
 type statusCounts struct {
-	Fail int `json:"fail"`
-	Pass int `json:"pass"`
-	Skip int `json:"skip"`
+	Fail    int `json:"fail"`
+	Pass    int `json:"pass"`
+	Skip    int `json:"skip"`
+	Unknown int `json:"unknown"`
 }
 
 type resultsSummary struct {
@@ -41,9 +44,12 @@ func summarizeResults(verificationID string, outcomes []api.ResultOutcome) (resu
 		counts[severity] = statusCounts{}
 	}
 	for i, outcome := range outcomes {
-		status := strings.TrimSpace(outcome.Status)
-		if status != "fail" && status != "pass" && status != "skip" {
-			return resultsSummary{}, fmt.Errorf("result %d has invalid status %q", i+1, outcome.Status)
+		status := ""
+		if outcome.Status != nil {
+			status = *outcome.Status
+		}
+		if outcome.Status != nil && status != "fail" && status != "pass" && status != "skip" {
+			return resultsSummary{}, fmt.Errorf("result %d has invalid status %q", i+1, status)
 		}
 		severity := "unclassified"
 		if outcome.Finding != nil && outcome.Finding.Severity != nil {
@@ -60,6 +66,8 @@ func summarizeResults(verificationID string, outcomes []api.ResultOutcome) (resu
 			entry.Pass++
 		case "skip":
 			entry.Skip++
+		default:
+			entry.Unknown++
 		}
 		counts[severity] = entry
 	}
@@ -68,6 +76,10 @@ func summarizeResults(verificationID string, outcomes []api.ResultOutcome) (resu
 		totals.Fail += entry.Fail
 		totals.Pass += entry.Pass
 		totals.Skip += entry.Skip
+		totals.Unknown += entry.Unknown
+	}
+	if totals.Fail+totals.Pass+totals.Skip+totals.Unknown != len(outcomes) {
+		return resultsSummary{}, fmt.Errorf("result counts do not reconcile with total rule outcomes")
 	}
 	return resultsSummary{
 		VerificationID:    verificationID,
@@ -80,25 +92,46 @@ func summarizeResults(verificationID string, outcomes []api.ResultOutcome) (resu
 
 func newResultsSummaryCmd(opts *rootOptions) *cobra.Command {
 	var verificationID string
+	var timeout time.Duration
+	var failOnFindings bool
 	cmd := &cobra.Command{
 		Use:   "summary",
 		Short: "Summarize rule outcomes by severity and status",
+		Long:  "Summarize rule outcomes. A null status counts as unknown, indicating an incomplete result. Use --fail-on-findings to exit nonzero for failures or unknown outcomes.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runJSON(func(ctx context.Context) (any, error) {
-				client, _, err := newClient(opts, true)
-				if err != nil {
-					return nil, err
-				}
-				outcomes, err := client.ListAllResults(ctx, verificationID)
-				if err != nil {
-					return nil, err
-				}
-				return summarizeResults(verificationID, outcomes)
-			})
+			if timeout <= 0 {
+				return fmt.Errorf("invalid --timeout %s: must be positive", timeout)
+			}
+			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
+			defer cancel()
+			client, _, err := newClient(opts, true)
+			if err != nil {
+				return err
+			}
+			outcomes, err := client.ListAllResults(ctx, verificationID)
+			if err != nil {
+				return err
+			}
+			summary, err := summarizeResults(verificationID, outcomes)
+			if err != nil {
+				return err
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := output.JSON(summary); err != nil {
+				return err
+			}
+			if failOnFindings && (summary.Totals.Fail > 0 || summary.Totals.Unknown > 0) {
+				return fmt.Errorf("summary contains failed or unknown rule outcomes")
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&verificationID, "verification", "", "Verification UUID")
+	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "Maximum time to fetch all results (default 5m; must be positive)")
+	cmd.Flags().BoolVar(&failOnFindings, "fail-on-findings", false, "Exit nonzero after JSON output if failures or unknown outcomes exist")
 	_ = cmd.MarkFlagRequired("verification")
 	return cmd
 }
@@ -115,7 +148,7 @@ func newResultsListCmd(opts *rootOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				return client.ListResults(ctx, verificationID)
+				return client.ListResults(cmd.Context(), verificationID)
 			})
 		},
 	}
@@ -134,7 +167,7 @@ func newResultsGetCmd(opts *rootOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				return client.GetResult(ctx, args[0])
+				return client.GetResult(cmd.Context(), args[0])
 			})
 		},
 	}

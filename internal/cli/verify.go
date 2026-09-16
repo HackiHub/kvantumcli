@@ -30,7 +30,7 @@ func newVerifyLatestCmd(opts *rootOptions) *cobra.Command {
 		Short: "Get the latest finished verification for a repository",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runJSON(func(ctx context.Context) (any, error) {
+			return runJSONContext(cmd, func(ctx context.Context) (any, error) {
 				client, _, err := newClient(opts, true)
 				if err != nil {
 					return nil, err
@@ -50,9 +50,10 @@ func newVerifyRunCmd(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run verification for a repo (default) or all repos in a project",
+		Long:  "Run a verification and print the API response. For a repository run, a current API response includes data.verificationId; pass that exact ID to verify wait. Older API responses may be empty and provide no ID. Project-wide runs retain their API response as returned.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runJSON(func(ctx context.Context) (any, error) {
+			return runJSONContext(cmd, func(ctx context.Context) (any, error) {
 				client, cfg, err := newClient(opts, true)
 				if err != nil {
 					return nil, err
@@ -101,7 +102,7 @@ func newVerifyListCmd(opts *rootOptions) *cobra.Command {
 		Short: "List verification runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runJSON(func(ctx context.Context) (any, error) {
+			return runJSONContext(cmd, func(ctx context.Context) (any, error) {
 				client, _, err := newClient(opts, true)
 				if err != nil {
 					return nil, err
@@ -118,7 +119,7 @@ func newVerifyGetCmd(opts *rootOptions) *cobra.Command {
 		Short: "Get a single verification run",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runJSON(func(ctx context.Context) (any, error) {
+			return runJSONContext(cmd, func(ctx context.Context) (any, error) {
 				client, _, err := newClient(opts, true)
 				if err != nil {
 					return nil, err
@@ -150,7 +151,7 @@ func newVerifyWaitCmd(opts *rootOptions) *cobra.Command {
 				return err
 			}
 
-			result, err := client.WaitForVerification(context.Background(), args[0], api.WaitOptions{
+			result, err := client.WaitForVerification(cmd.Context(), args[0], api.WaitOptions{
 				Interval: interval,
 				Timeout:  timeout,
 			})
