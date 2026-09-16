@@ -29,6 +29,11 @@ func TestProcessRunWaitAndSummaryUsesReturnedVerificationID(t *testing.T) {
 		}
 		mu.Lock()
 		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		poll := 0
+		if r.Method == http.MethodGet && r.URL.Path == "/verifications/verification-acceptance-1" {
+			pollCount++
+			poll = pollCount
+		}
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -46,8 +51,7 @@ func TestProcessRunWaitAndSummaryUsesReturnedVerificationID(t *testing.T) {
 			}
 			fmt.Fprint(w, fixtures["repository-run-response.json"])
 		case r.Method == http.MethodGet && r.URL.Path == "/verifications/verification-acceptance-1":
-			pollCount++
-			if pollCount == 1 {
+			if poll == 1 {
 				fmt.Fprint(w, fixtures["verification-detail-running.json"])
 			} else {
 				fmt.Fprint(w, fixtures["verification-detail-finished.json"])
@@ -85,8 +89,11 @@ func TestProcessRunWaitAndSummaryUsesReturnedVerificationID(t *testing.T) {
 	if wait.exitCode != 0 {
 		t.Fatalf("verify wait exit = %d, stderr = %s", wait.exitCode, wait.stderr)
 	}
-	if !strings.Contains(wait.stdout, `"status": "finished"`) || pollCount != 2 {
-		t.Fatalf("verify wait stdout = %s; polls = %d, want finished after two polls", wait.stdout, pollCount)
+	mu.Lock()
+	gotPollCount := pollCount
+	mu.Unlock()
+	if !strings.Contains(wait.stdout, `"status": "finished"`) || gotPollCount != 2 {
+		t.Fatalf("verify wait stdout = %s; polls = %d, want finished after two polls", wait.stdout, gotPollCount)
 	}
 
 	summary := runCLI(t, server.URL, "results", "summary", "--verification", runResponse.Data.VerificationID)
@@ -109,6 +116,79 @@ func TestProcessRunWaitAndSummaryUsesReturnedVerificationID(t *testing.T) {
 	defer mu.Unlock()
 	if got, want := strings.Join(requests, "; "), "POST /verifications/run/repository/repo-acceptance/tenant-acceptance; GET /verifications/verification-acceptance-1; GET /verifications/verification-acceptance-1; GET /results?limit=100&page=1&verificationId=verification-acceptance-1"; got != want {
 		t.Errorf("requests = %s\nwant %s", got, want)
+	}
+}
+
+func TestProcessRunEmpty201PrintsNullAndMakesNoFollowUpRequest(t *testing.T) {
+	var mu sync.Mutex
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+acceptanceToken || r.Header.Get("x-tenant-id") != acceptanceTenant {
+			http.Error(w, "missing expected authentication", http.StatusUnauthorized)
+			return
+		}
+		mu.Lock()
+		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		mu.Unlock()
+		if r.Method != http.MethodPost || r.URL.Path != "/verifications/run/repository/repo-acceptance/tenant-acceptance" {
+			http.Error(w, "unexpected request", http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	result := runCLI(t, server.URL, "verify", "run", "--repo", "repo-acceptance")
+	if result.exitCode != 0 {
+		t.Fatalf("verify run exit = %d, stderr = %s", result.exitCode, result.stderr)
+	}
+	if result.stderr != "" {
+		t.Errorf("verify run stderr = %q, want empty", result.stderr)
+	}
+	if got := strings.TrimSpace(result.stdout); got != "null" {
+		t.Errorf("verify run stdout = %q, want null", result.stdout)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got, want := strings.Join(requests, "; "), "POST /verifications/run/repository/repo-acceptance/tenant-acceptance"; got != want {
+		t.Errorf("requests = %s\nwant %s", got, want)
+	}
+}
+
+func TestProcessSummaryFailOnFindingsPrintsJSONAndExitsThree(t *testing.T) {
+	fixtures := acceptanceFixtures(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+acceptanceToken || r.Header.Get("x-tenant-id") != acceptanceTenant {
+			http.Error(w, "missing expected authentication", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodGet || r.URL.Path != "/results" || r.URL.Query().Get("verificationId") != "verification-acceptance-1" {
+			http.Error(w, "unexpected request", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, fixtures["results-page-null-status.json"])
+	}))
+	defer server.Close()
+
+	result := runCLI(t, server.URL, "results", "summary", "--verification", "verification-acceptance-1", "--fail-on-findings")
+	if result.exitCode != 3 {
+		t.Fatalf("results summary exit = %d, want 3; stderr = %s", result.exitCode, result.stderr)
+	}
+	var output struct {
+		VerificationID string `json:"verificationId"`
+		Totals         struct {
+			Fail, Pass, Skip, Unknown int
+		} `json:"totals"`
+	}
+	if err := json.Unmarshal([]byte(result.stdout), &output); err != nil {
+		t.Fatalf("summary stdout is not complete JSON: %v\n%s", err, result.stdout)
+	}
+	if output.VerificationID != "verification-acceptance-1" || output.Totals.Fail != 1 || output.Totals.Pass != 1 || output.Totals.Skip != 0 || output.Totals.Unknown != 1 {
+		t.Errorf("summary = %+v", output)
+	}
+	if !strings.Contains(result.stderr, "summary contains failed or unknown rule outcomes") {
+		t.Errorf("stderr = %q, want findings gate error", result.stderr)
 	}
 }
 

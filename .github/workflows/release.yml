@@ -41,6 +41,16 @@ jobs:
         run: |
           make clean
           make dist
+      - name: Rebuild from the same commit in a separate path and compare assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/rebuild"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/rebuild"
+          (cd "$RUNNER_TEMP/rebuild" && make dist)
+          for asset in dist/kvantumci-*; do
+            cmp "$asset" "$RUNNER_TEMP/rebuild/$asset"
+          done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-binaries
@@ -83,6 +93,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          umask 077
           test -n "$SIGNING_KEY_PEM" && test -n "$SIGNING_CERT_PEM"
           printf '%s\n' "$SIGNING_KEY_PEM" > "$RUNNER_TEMP/signing-key.pem"
           printf '%s\n' "$SIGNING_CERT_PEM" > "$RUNNER_TEMP/signing-cert.pem"
@@ -90,7 +101,8 @@ jobs:
           openssl pkey -in "$RUNNER_TEMP/signing-key.pem" -pubout > "$RUNNER_TEMP/from-key.pem"
           openssl x509 -in "$RUNNER_TEMP/signing-cert.pem" -pubkey -noout > "$RUNNER_TEMP/from-cert.pem"
           cmp "$RUNNER_TEMP/from-key.pem" "$RUNNER_TEMP/from-cert.pem"
-          openssl pkey -in "$RUNNER_TEMP/signing-key.pem" -text -noout | grep -Fq 'Private-Key: (3072 bit)'
+          openssl rsa -pubin -in "$RUNNER_TEMP/from-key.pem" -noout -text > "$RUNNER_TEMP/rsa-public.txt"
+          grep -Eq '^(RSA )?Public-Key: \(3072 bit\)$' "$RUNNER_TEMP/rsa-public.txt"
           fingerprint=$(openssl x509 -in "$RUNNER_TEMP/signing-cert.pem" -outform DER | openssl dgst -sha256 | sed 's/^.*= //')
           grep -Fqx "PINNED_CERT_SHA256=$fingerprint" install.sh
           grep -Fqx "\$PinnedCertificateSha256 = '$fingerprint'" install.ps1
@@ -125,4 +137,4 @@ jobs:
       - name: Remove temporary signing key
         if: always()
         shell: bash
-        run: rm -f "$RUNNER_TEMP/signing-key.pem" "$RUNNER_TEMP/signing-cert.pem" "$RUNNER_TEMP/from-key.pem" "$RUNNER_TEMP/from-cert.pem"
+        run: rm -f "$RUNNER_TEMP/signing-key.pem" "$RUNNER_TEMP/signing-cert.pem" "$RUNNER_TEMP/from-key.pem" "$RUNNER_TEMP/from-cert.pem" "$RUNNER_TEMP/rsa-public.txt"

@@ -84,6 +84,9 @@ func TestResultsSummaryExitPolicyAndTimeout(t *testing.T) {
 			if (err != nil) != tc.wantError {
 				t.Fatalf("error = %v", err)
 			}
+			if tc.wantError && !errors.Is(err, ErrFindingsRejected) {
+				t.Fatalf("gate error = %v", err)
+			}
 			if _, err := file.Seek(0, 0); err != nil {
 				t.Fatal(err)
 			}
@@ -136,6 +139,8 @@ func TestResultsSummaryTimeoutDoesNotPrintPartialOutput(t *testing.T) {
 	defer func() { os.Stdout = previous; _ = file.Close() }()
 	if err := cmd.Execute(); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v", err)
+	} else if !strings.Contains(err.Error(), "verification v1") || !strings.Contains(err.Error(), "20ms") || !strings.Contains(err.Error(), "--timeout") {
+		t.Fatalf("missing timeout guidance: %v", err)
 	}
 	info, err := file.Stat()
 	if err != nil {
@@ -143,6 +148,22 @@ func TestResultsSummaryTimeoutDoesNotPrintPartialOutput(t *testing.T) {
 	}
 	if info.Size() != 0 {
 		t.Fatalf("printed %d bytes on timeout", info.Size())
+	}
+}
+
+func TestSummaryFetchErrorOnlyLabelsOverallDeadline(t *testing.T) {
+	requestErr := summaryFetchError(context.DeadlineExceeded, nil, "v1", 5*time.Minute)
+	if strings.Contains(requestErr.Error(), "after 5m") {
+		t.Fatalf("request timeout mislabelled as overall timeout: %v", requestErr)
+	}
+	overallErr := summaryFetchError(context.DeadlineExceeded, context.DeadlineExceeded, "v1", 5*time.Minute)
+	if !errors.Is(overallErr, context.DeadlineExceeded) || !strings.Contains(overallErr.Error(), "after 5m") {
+		t.Fatalf("overall timeout = %v", overallErr)
+	}
+	apiErr := &api.APIError{StatusCode: http.StatusServiceUnavailable, Body: "upstream unavailable"}
+	overallErr = summaryFetchError(apiErr, context.DeadlineExceeded, "v1", 5*time.Minute)
+	if !errors.Is(overallErr, context.DeadlineExceeded) || !strings.Contains(overallErr.Error(), "HTTP 503") {
+		t.Fatalf("overall timeout with fetch error = %v", overallErr)
 	}
 }
 

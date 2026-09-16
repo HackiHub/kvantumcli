@@ -14,7 +14,10 @@ test:
 tidy:
 	go mod tidy
 
-.PHONY: dist
+.PHONY: dist force-dist
+force-dist:
+
+# Rebuild every asset for release checks; never reuse a stale dist binary.
 dist: \
 	dist/$(BIN)-darwin-amd64 \
 	dist/$(BIN)-darwin-arm64 \
@@ -23,23 +26,23 @@ dist: \
 	dist/$(BIN)-windows-amd64.exe \
 	dist/$(BIN)-windows-arm64.exe
 
-dist/$(BIN)-darwin-amd64:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o $@ $(CMD)
+dist/$(BIN)-darwin-amd64: force-dist
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags=-buildid= -o $@ $(CMD)
 
-dist/$(BIN)-darwin-arm64:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o $@ $(CMD)
+dist/$(BIN)-darwin-arm64: force-dist
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -buildvcs=false -ldflags=-buildid= -o $@ $(CMD)
 
-dist/$(BIN)-linux-amd64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ $(CMD)
+dist/$(BIN)-linux-amd64: force-dist
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags=-buildid= -o $@ $(CMD)
 
-dist/$(BIN)-linux-arm64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $@ $(CMD)
+dist/$(BIN)-linux-arm64: force-dist
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -buildvcs=false -ldflags=-buildid= -o $@ $(CMD)
 
-dist/$(BIN)-windows-amd64.exe:
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o $@ $(CMD)
+dist/$(BIN)-windows-amd64.exe: force-dist
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags=-buildid= -o $@ $(CMD)
 
-dist/$(BIN)-windows-arm64.exe:
-	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -o $@ $(CMD)
+dist/$(BIN)-windows-arm64.exe: force-dist
+	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -buildvcs=false -ldflags=-buildid= -o $@ $(CMD)
 
 # RELEASE_TAG is the exact tag used in the signed manifest and download URLs.
 .PHONY: release-manifest release-sign
@@ -55,7 +58,10 @@ release-manifest: dist
 release-sign: release-manifest
 	@test -n "$(RELEASE_SIGNING_KEY_FILE)" && test -f "$(RELEASE_SIGNING_KEY_FILE)" || { echo 'Set RELEASE_SIGNING_KEY_FILE to an RSA-3072 private key PEM file' >&2; exit 1; }
 	@test -n "$(RELEASE_SIGNING_CERT_FILE)" && test -f "$(RELEASE_SIGNING_CERT_FILE)" || { echo 'Set RELEASE_SIGNING_CERT_FILE to the pinned certificate PEM file' >&2; exit 1; }
-	@openssl pkey -in "$(RELEASE_SIGNING_KEY_FILE)" -text -noout 2>/dev/null | grep -Fq 'Private-Key: (3072 bit)' || { echo 'Signing key must be RSA-3072' >&2; exit 1; }
+	@tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
+	  openssl pkey -in "$(RELEASE_SIGNING_KEY_FILE)" -pubout -out "$$tmp" 2>/dev/null && \
+	  openssl rsa -pubin -in "$$tmp" -noout -text 2>/dev/null | grep -Eq '^(RSA )?Public-Key: \(3072 bit\)$$' || \
+	  { echo 'Signing key must be RSA-3072' >&2; exit 1; }
 	@key_pub=$$(openssl pkey -in "$(RELEASE_SIGNING_KEY_FILE)" -pubout); cert_pub=$$(openssl x509 -in "$(RELEASE_SIGNING_CERT_FILE)" -pubkey -noout); \
 	  test -n "$$key_pub" && test "$$key_pub" = "$$cert_pub" || { echo 'Signing key and certificate do not match' >&2; exit 1; }
 	@fingerprint=$$(openssl x509 -in "$(RELEASE_SIGNING_CERT_FILE)" -outform DER | openssl dgst -sha256 | sed 's/^.*= //'); \

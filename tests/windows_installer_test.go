@@ -61,15 +61,27 @@ func TestWindowsInstaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	redirectToHTTP := false
+	redirectLocation := ""
+	redirectStatus := http.StatusFound
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		asset := strings.TrimPrefix(r.URL.Path, "/v1.2.3/")
-		if redirectToHTTP && strings.HasPrefix(asset, "kvantumci-windows-") {
-			http.Redirect(w, r, "http://example.invalid/downgrade", http.StatusFound)
+		if r.URL.Path == "/latest" {
+			http.Redirect(w, r, "/tag/v1.2.3", http.StatusFound)
+			return
+		}
+		if r.URL.Path == "/tag/v1.2.3" {
+			_, _ = w.Write([]byte("release"))
+			return
+		}
+		asset := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/v1.2.3/"), "/signed/")
+		if redirectLocation != "" && strings.HasPrefix(r.URL.Path, "/v1.2.3/") && strings.HasPrefix(asset, "kvantumci-windows-") {
+			if redirectLocation != "<missing>" {
+				w.Header().Set("Location", redirectLocation)
+			}
+			w.WriteHeader(redirectStatus)
 			return
 		}
 		content, ok := files[asset]
-		if !ok || !strings.HasPrefix(r.URL.Path, "/v1.2.3/") {
+		if !ok || !(strings.HasPrefix(r.URL.Path, "/v1.2.3/") || strings.HasPrefix(r.URL.Path, "/signed/")) {
 			http.NotFound(w, r)
 			return
 		}
@@ -99,7 +111,21 @@ func TestWindowsInstaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := filepath.Join(tmp, "run.ps1")
-	if err := os.WriteFile(runner, []byte("$ErrorActionPreference='Stop'\n[Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }\n& $env:KVANTUMCI_INSTALLER_SCRIPT -NoPathUpdate\n"), 0600); err != nil {
+	runnerScript := `$ErrorActionPreference='Stop'
+if ($env:KVANTUMCI_FIXTURE_CERT_HASH) {
+    $expected = $env:KVANTUMCI_FIXTURE_CERT_HASH
+    [Net.ServicePointManager]::ServerCertificateValidationCallback = {
+        param($sender, $certificate, $chain, $errors)
+        if (-not $certificate) { return $false }
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { $actual = [BitConverter]::ToString($sha.ComputeHash($certificate.GetRawCertData())).Replace('-', '').ToLowerInvariant() }
+        finally { $sha.Dispose() }
+        return $actual -ceq $expected
+    }
+}
+& $env:KVANTUMCI_INSTALLER_SCRIPT -NoPathUpdate
+`
+	if err := os.WriteFile(runner, []byte(runnerScript), 0600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("KVANTUMCI_INSTALLER_SCRIPT", installer)
@@ -107,13 +133,16 @@ func TestWindowsInstaller(t *testing.T) {
 	t.Setenv("KVANTUMCI_DOWNLOAD_BASE_URL", server.URL)
 	t.Setenv("KVANTUMCI_INSTALL_DIR", installDir)
 	t.Setenv("KVANTUMCI_VERSION", "v1.2.3")
-	run := func(wantSuccess bool) {
+	serverCert := sha256.Sum256(server.TLS.Certificates[0].Certificate[0])
+	t.Setenv("KVANTUMCI_FIXTURE_CERT_HASH", fmt.Sprintf("%x", serverCert))
+	run := func(wantSuccess bool) string {
 		t.Helper()
 		cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", runner)
 		output, err := cmd.CombinedOutput()
 		if (err == nil) != wantSuccess {
 			t.Fatalf("installer success=%t, wanted %t: %v\n%s", err == nil, wantSuccess, err, output)
 		}
+		return string(output)
 	}
 	assertOld := func() {
 		t.Helper()
@@ -121,6 +150,14 @@ func TestWindowsInstaller(t *testing.T) {
 		if err != nil || string(data) != "old binary" {
 			t.Fatalf("existing binary changed on failure: %q, %v", data, err)
 		}
+	}
+	expectFailure := func(message string) {
+		t.Helper()
+		output := run(false)
+		if !strings.Contains(output, message) {
+			t.Fatalf("expected %q in installer output:\n%s", message, output)
+		}
+		assertOld()
 	}
 	run(true)
 	asset := "kvantumci-windows-" + runtime.GOARCH + ".exe"
@@ -130,7 +167,15 @@ func TestWindowsInstaller(t *testing.T) {
 	}
 	pathRunner := filepath.Join(tmp, "path-test.ps1")
 	pathScript := `$ErrorActionPreference='Stop'
-[Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+$fixtureCertificateHash = $env:KVANTUMCI_FIXTURE_CERT_HASH
+[Net.ServicePointManager]::ServerCertificateValidationCallback = {
+    param($sender, $certificate, $chain, $errors)
+    if (-not $certificate) { return $false }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $actual = [BitConverter]::ToString($sha.ComputeHash($certificate.GetRawCertData())).Replace('-', '').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+    return $actual -ceq $fixtureCertificateHash
+}
 $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
 if (-not $key) { $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment') }
 $original = $key.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
@@ -145,6 +190,15 @@ try {
     & $env:KVANTUMCI_INSTALLER_SCRIPT
     $again = [string] $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
     if ($again -cne $expected) { throw 'Repeated install duplicated PATH' }
+    $rawEquivalent = '%KVANTUMCI_FIXTURE_INSTALL_DIR%'
+    $key.SetValue('Path', $rawEquivalent, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+    & $env:KVANTUMCI_INSTALLER_SCRIPT
+    $expanded = [string] $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    if ($expanded -cne $rawEquivalent -or $key.GetValueKind('Path') -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) { throw 'Expanded equivalent PATH entry was duplicated' }
+    $key.SetValue('Path', $env:KVANTUMCI_INSTALL_DIR, [Microsoft.Win32.RegistryValueKind]::String)
+    & $env:KVANTUMCI_INSTALLER_SCRIPT
+    $literal = [string] $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    if ($literal -cne $env:KVANTUMCI_INSTALL_DIR) { throw 'Literal equivalent PATH entry was duplicated' }
     $key.SetValue('Path', $raw, [Microsoft.Win32.RegistryValueKind]::ExpandString)
     & $env:KVANTUMCI_INSTALLER_SCRIPT -NoPathUpdate
     $unchanged = [string] $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
@@ -158,10 +212,37 @@ try {
 	if err := os.WriteFile(pathRunner, []byte(pathScript), 0600); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("KVANTUMCI_FIXTURE_INSTALL_DIR", installDir)
 	pathCmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", pathRunner)
 	if output, err := pathCmd.CombinedOutput(); err != nil {
 		t.Fatalf("Windows PATH checks failed: %v\n%s", err, output)
 	}
+	// Rewrite only the source URL constants in a private test copy to exercise
+	// the production non-mirror and latest branches against the local HTTPS fixture.
+	seamSource := string(installerSource)
+	for old, replacement := range map[string]string{
+		`"https://github.com/$repository/releases/latest"`:        `"` + server.URL + `/latest"`,
+		`"https://github.com/$repository/releases/tag/"`:          `"` + server.URL + `/tag/"`,
+		`"https://github.com/$repository/releases/download/$tag"`: `"` + server.URL + `/v1.2.3"`,
+	} {
+		if !strings.Contains(seamSource, old) {
+			t.Fatalf("missing URL test seam: %s", old)
+		}
+		seamSource = strings.Replace(seamSource, old, replacement, 1)
+	}
+	seamSource = strings.ReplaceAll(seamSource, "PROVISION_PRODUCTION_CERT_SHA256", fmt.Sprintf("%x", certHash))
+	seamInstaller := filepath.Join(tmp, "install-seam.ps1")
+	if err := os.WriteFile(seamInstaller, []byte(seamSource), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KVANTUMCI_INSTALLER_SCRIPT", seamInstaller)
+	t.Setenv("KVANTUMCI_DOWNLOAD_BASE_URL", "")
+	run(true)
+	t.Setenv("KVANTUMCI_VERSION", "latest")
+	run(true)
+	t.Setenv("KVANTUMCI_VERSION", "v1.2.3")
+	t.Setenv("KVANTUMCI_DOWNLOAD_BASE_URL", server.URL)
+	t.Setenv("KVANTUMCI_INSTALLER_SCRIPT", installer)
 	reset := func() {
 		t.Helper()
 		if err := os.WriteFile(dest, []byte("old binary"), 0700); err != nil {
@@ -169,6 +250,42 @@ try {
 		}
 	}
 	reset()
+	redirectLocation = server.URL + "/signed/" + asset + "?token=signed"
+	run(true)
+	reset()
+	redirectLocation = "../../signed/" + asset + "?token=signed"
+	run(true)
+	reset()
+	redirectLocation = "https://user:pass@example.invalid/" + asset
+	expectFailure("Invalid HTTPS download URL")
+	redirectLocation = "<missing>"
+	expectFailure("Redirect without Location")
+	redirectLocation = "/v1.2.3/" + asset
+	expectFailure("Too many redirects")
+	redirectLocation = ""
+	wrongVersion := bytes.Replace(manifest.Bytes(), []byte("version v1.2.3"), []byte("version v1.2.2"), 1)
+	files["release-manifest.txt"] = wrongVersion
+	wrongHash := sha256.Sum256(wrongVersion)
+	files["release-manifest.sig"], err = rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, wrongHash[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectFailure("Invalid release manifest header or version")
+	files["release-manifest.txt"] = manifest.Bytes()
+	files["release-manifest.sig"], err = rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, h[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	unpinned := filepath.Join(tmp, "unpinned.pem")
+	if err := os.WriteFile(unpinned, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.TLS.Certificates[0].Certificate[0]}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KVANTUMCI_PUBLIC_KEY_FILE", unpinned)
+	expectFailure("Trusted certificate fingerprint mismatch")
+	t.Setenv("KVANTUMCI_PUBLIC_KEY_FILE", certPath)
+	t.Setenv("KVANTUMCI_FIXTURE_CERT_HASH", "")
+	expectFailure("Download failed")
+	t.Setenv("KVANTUMCI_FIXTURE_CERT_HASH", fmt.Sprintf("%x", serverCert))
 	files[asset] = []byte("tampered")
 	run(false)
 	assertOld()
@@ -189,7 +306,6 @@ try {
 	run(false)
 	assertOld()
 	t.Setenv("KVANTUMCI_DOWNLOAD_BASE_URL", server.URL)
-	redirectToHTTP = true
-	run(false)
-	assertOld()
+	redirectLocation = "http://example.invalid/downgrade"
+	expectFailure("Invalid HTTPS download URL")
 }

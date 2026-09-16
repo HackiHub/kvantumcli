@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -60,20 +61,20 @@ The --token flag remains available, but may expose the token in shell history an
 			providedTenant := firstNonEmpty(tenantID, opts.tenantID, os.Getenv("KVANTUMCI_TENANT_ID"))
 
 			interactive := isInteractive()
-			// Flags preserve the noninteractive partial-update workflow. Environment
-			// values fill only their own fields; other fields are still prompted.
+			// Bare interactive configure still offers the saved defaults. Partial
+			// flags only suppress prompts when all other fields are already known.
 			flagsProvided := cmd.Flags().Changed("api-url") || cmd.Flags().Changed("token") || cmd.Flags().Changed("tenant-id") || cmd.InheritedFlags().Changed("api-url") || cmd.InheritedFlags().Changed("token") || cmd.InheritedFlags().Changed("tenant-id")
-			promptMissing := interactive && !flagsProvided
+			promptAll := interactive && !flagsProvided
 
-			apiURLVal, err := resolveLoginField("API URL", "api-url", providedAPI, existing.APIURL, promptMissing)
+			apiURLVal, err := resolveLoginField(cmd.Context(), "API URL", "api-url", providedAPI, existing.APIURL, promptAll || interactive && providedAPI == "" && existing.APIURL == "", false)
 			if err != nil {
 				return err
 			}
-			tokenVal, err := resolveLoginField("PAT/GAT token", "token", providedToken, existing.Token, promptMissing)
+			tokenVal, err := resolveLoginField(cmd.Context(), "PAT/GAT token", "token", providedToken, existing.Token, promptAll || interactive && providedToken == "" && existing.Token == "", true)
 			if err != nil {
 				return err
 			}
-			tenantVal, err := resolveLoginField("Tenant ID", "tenant-id", providedTenant, existing.TenantID, promptMissing)
+			tenantVal, err := resolveLoginField(cmd.Context(), "Tenant ID", "tenant-id", providedTenant, existing.TenantID, promptAll || interactive && providedTenant == "" && existing.TenantID == "", false)
 			if err != nil {
 				return err
 			}
@@ -146,12 +147,12 @@ func isInteractive() bool {
 }
 
 // resolveLoginField picks an explicit value, prompts when requested, or falls back to the file default.
-func resolveLoginField(label, flag, provided, fileDefault string, promptMissing bool) (string, error) {
+func resolveLoginField(ctx context.Context, label, flag, provided, fileDefault string, promptMissing, secret bool) (string, error) {
 	if provided != "" {
 		return provided, nil
 	}
 	if promptMissing {
-		return promptLoginField(label, fileDefault, strings.Contains(strings.ToLower(label), "token"))
+		return promptLoginField(ctx, label, fileDefault, secret)
 	}
 	if fileDefault != "" {
 		return fileDefault, nil
@@ -159,25 +160,19 @@ func resolveLoginField(label, flag, provided, fileDefault string, promptMissing 
 	return "", fail("%s is required (pass --%s or run interactively in a terminal)", label, flag)
 }
 
-func promptLoginField(label, fileDefault string, secret bool) (string, error) {
-	switch {
-	case !secret && fileDefault != "":
-		fmt.Fprintf(os.Stderr, "%s [%s]: ", label, fileDefault)
-	case secret && fileDefault != "":
-		fmt.Fprintf(os.Stderr, "%s [stored; leave empty to keep]: ", label)
-	default:
-		fmt.Fprintf(os.Stderr, "%s: ", label)
-	}
-
-	var line string
-	var err error
+func promptLoginField(ctx context.Context, label, fileDefault string, secret bool) (string, error) {
+	line, err := readTerminalPrompt(ctx, os.Stdin, secret, func() {
+		switch {
+		case !secret && fileDefault != "":
+			fmt.Fprintf(os.Stderr, "%s [%s]: ", label, fileDefault)
+		case secret && fileDefault != "":
+			fmt.Fprintf(os.Stderr, "%s [stored; leave empty to keep]: ", label)
+		default:
+			fmt.Fprintf(os.Stderr, "%s: ", label)
+		}
+	})
 	if secret {
-		var bytes []byte
-		bytes, err = term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Fprintln(os.Stderr)
-		line = string(bytes)
-	} else {
-		line, err = readPromptLine(os.Stdin)
 	}
 	if err != nil {
 		return "", fail("read %s: %v", label, err)
@@ -209,7 +204,13 @@ func readPromptLine(r io.Reader) (string, error) {
 			b.WriteByte(one[0])
 		}
 		if err != nil {
+			if b.Len() > 0 && err == io.EOF {
+				return b.String(), nil
+			}
 			return "", err
+		}
+		if n == 0 {
+			return "", io.ErrNoProgress
 		}
 	}
 }

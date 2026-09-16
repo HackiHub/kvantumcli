@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -27,6 +28,9 @@ func Execute() {
 	defer stop()
 	if err := root.ExecuteContext(ctx); err != nil {
 		output.Error(err)
+		if errors.Is(err, ErrFindingsRejected) {
+			os.Exit(3)
+		}
 		os.Exit(1)
 	}
 }

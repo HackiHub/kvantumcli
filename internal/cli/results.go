@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -37,6 +38,9 @@ type resultsSummary struct {
 	Totals            statusCounts            `json:"totals"`
 	BySeverity        map[string]statusCounts `json:"bySeverity"`
 }
+
+// ErrFindingsRejected identifies a completed summary that failed its opted-in gate.
+var ErrFindingsRejected = errors.New("summary contains failed or unknown rule outcomes")
 
 func summarizeResults(verificationID string, outcomes []api.ResultOutcome) (resultsSummary, error) {
 	counts := map[string]statusCounts{}
@@ -111,20 +115,20 @@ func newResultsSummaryCmd(opts *rootOptions) *cobra.Command {
 			}
 			outcomes, err := client.ListAllResults(ctx, verificationID)
 			if err != nil {
-				return err
+				return summaryFetchError(err, ctx.Err(), verificationID, timeout)
 			}
 			summary, err := summarizeResults(verificationID, outcomes)
 			if err != nil {
 				return err
 			}
 			if err := ctx.Err(); err != nil {
-				return err
+				return summaryFetchError(err, ctx.Err(), verificationID, timeout)
 			}
 			if err := output.JSON(summary); err != nil {
 				return err
 			}
 			if failOnFindings && (summary.Totals.Fail > 0 || summary.Totals.Unknown > 0) {
-				return fmt.Errorf("summary contains failed or unknown rule outcomes")
+				return ErrFindingsRejected
 			}
 			return nil
 		},
@@ -134,6 +138,13 @@ func newResultsSummaryCmd(opts *rootOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&failOnFindings, "fail-on-findings", false, "Exit nonzero after JSON output if failures or unknown outcomes exist")
 	_ = cmd.MarkFlagRequired("verification")
 	return cmd
+}
+
+func summaryFetchError(err, waitErr error, verificationID string, timeout time.Duration) error {
+	if errors.Is(waitErr, context.DeadlineExceeded) {
+		return fmt.Errorf("timed out fetching summary for verification %s after %s; increase --timeout if needed (last fetch error: %v): %w", verificationID, timeout, err, waitErr)
+	}
+	return err
 }
 
 func newResultsListCmd(opts *rootOptions) *cobra.Command {

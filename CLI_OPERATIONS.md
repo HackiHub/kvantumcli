@@ -27,7 +27,9 @@ run `configure`. Interactive token entry is hidden. For scripts, prefer
 `KVANTUMCI_TOKEN` to `--token`, because command-line values can appear in shell
 history and process listings. Configuration merges values supplied by flags or
 environment over the existing file. `login` is a hidden deprecated alias for
-`configure`.
+`configure`. In a terminal, partial flags still prompt for missing required
+values; non-interactive calls with missing values fail promptly. Interrupting a
+prompt restores the terminal before exit.
 
 ## Projects
 
@@ -73,14 +75,24 @@ Providers: `github`, `gitlab`, `jenkins`, `nexus`, `jfrog`, `azure_repos`, and
 | `verify wait <verificationId> [--interval 5s] [--timeout 30m]` | Poll until `finished` or `error` | `GET /verifications/{id}` |
 
 Run body: `{ types?: ["sbom" | "cbom" | "aibom" | "mlbom"] }`.
-Repository-run responses from the current typed API expose the ID at
-`.data.verificationId`; use that exact value with `verify wait`. Earlier
-responses may be empty. Do not use `verify latest` to correlate a newly
-submitted run because it can select a previous completed verification.
+Repository-run → wait requires the deployed typed repository-run contract from
+API PR #419. Its merged source commit is `f4c5d782`, but deployment is not
+verified here. The typed response exposes the ID at `.data.verificationId`; use
+that exact, nonempty string with `verify wait`. An empty `201 Created` prints
+`null`, exits successfully for the accepted request, and provides no usable ID.
+Stop the workflow in that case. Do not retry the POST or use `verify latest` to
+correlate a newly submitted run because it can select a previous completed
+verification.
 
 Verification detail status is read from `data.status`. `verify wait` prints the
-final JSON once. It exits nonzero when the terminal status is `error`, or when
-polling, cancellation, timeout, or response parsing fails.
+final JSON once. It retries only transient polling failures for this safe GET:
+HTTP 408, 429, 500, 502, 503, and 504, plus transient transport failures and
+per-request timeouts while the overall timeout remains active. Retry delay grows
+after consecutive failures, resets after a successful poll, and honors a bounded
+valid `Retry-After` value. Authentication, other permanent 4xx, malformed
+responses, TLS, and redirect-policy failures stop immediately. It exits nonzero
+when the terminal status is `error`, or when polling, cancellation, timeout, or
+response parsing fails.
 
 Permission: `verification:run` and `verification:read`.
 
@@ -115,8 +127,17 @@ has `fail`, `pass`, `skip`, and `unknown` fields. An explicit null status is
 `unknown`, indicating incomplete output.
 
 A completed summary exits zero by default, including when it contains failed
-outcomes. `--fail-on-findings` prints the complete JSON and then exits nonzero
-if `fail` or `unknown` is nonzero. Use it for an automated gate.
+outcomes. `--fail-on-findings` prints the complete JSON and then exits 3 if
+`fail` or `unknown` is nonzero. Use it for an automated gate. Operational,
+usage, cancellation, and timeout failures exit 1. An overall summary timeout
+names the verification and effective timeout and suggests increasing
+`--timeout`; the command emits no partial JSON.
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | Command completed; a summary may still contain failed outcomes unless the gate flag was used. |
+| 1 | Usage, operational, cancellation, or timeout failure. |
+| 3 | `results summary --fail-on-findings` rejected completed output with `fail` or `unknown` outcomes. |
 
 Permission: `results:read`.
 

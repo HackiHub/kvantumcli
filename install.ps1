@@ -9,13 +9,11 @@ $repository = if ($env:KVANTUMCI_REPOSITORY) { $env:KVANTUMCI_REPOSITORY } else 
 $mirror = $env:KVANTUMCI_DOWNLOAD_BASE_URL
 $certificatePath = $env:KVANTUMCI_PUBLIC_KEY_FILE
 $PinnedCertificateSha256 = 'PROVISION_PRODUCTION_CERT_SHA256'
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-function Assert-HttpsUrl([string] $Value) {
+function Assert-HttpsUrl([string] $Value, [bool] $AllowQuery = $false) {
     $uri = $null
     if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref] $uri) -or
         $uri.Scheme -ne 'https' -or -not $uri.Host -or $uri.UserInfo -or
-        $uri.Query -or $uri.Fragment -or $Value -match '\s') {
+        (-not $AllowQuery -and $uri.Query) -or $uri.Fragment -or $Value -match '[\x00-\x20\x7f]') {
         throw "Invalid HTTPS download URL: $Value"
     }
     return $uri
@@ -38,7 +36,8 @@ function Receive-Https([string] $Url, [string] $Path) {
             if ($code -ge 300 -and $code -lt 400) {
                 $location = $response.Headers['Location']
                 if (-not $location) { throw "Redirect without Location: $uri" }
-                $uri = Assert-HttpsUrl ([Uri]::new($uri, $location).AbsoluteUri)
+                if ($location -match '[\x00-\x20\x7f]') { throw "Invalid HTTPS redirect: $uri" }
+                $uri = Assert-HttpsUrl ([Uri]::new($uri, $location).AbsoluteUri) $true
                 continue
             }
             if ($code -ne 200) { throw "Download failed ($code): $uri" }
@@ -95,10 +94,8 @@ try {
     if ($manifestBytes.Length -eq 0 -or $signatureBytes.Length -eq 0) { throw 'Empty release manifest or signature' }
     try {
         $rsa = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPublicKey($certificate)
-        if (-not $rsa -or $rsa.KeySize -ne 3072 -or
-            -not $rsa.VerifyData($manifestBytes, $signatureBytes, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)) {
-            throw 'Release manifest signature is invalid'
-        }
+        if (-not $rsa -or $rsa.KeySize -ne 3072) { throw 'Trusted certificate must contain an RSA-3072 key' }
+        if (-not $rsa.VerifyData($manifestBytes, $signatureBytes, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)) { throw 'Release manifest signature is invalid' }
     } finally { if ($rsa) { $rsa.Dispose() }; $certificate.Dispose() }
 
     $utf8 = [Text.UTF8Encoding]::new($false, $true)
@@ -138,7 +135,8 @@ try {
             $kind = try { $key.GetValueKind('Path') } catch { [Microsoft.Win32.RegistryValueKind]::String }
             if ($kind -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) { $kind = [Microsoft.Win32.RegistryValueKind]::String }
             $entries = @($rawPath.Split(';') | Where-Object { $_ })
-            if (-not ($entries | Where-Object { $_.TrimEnd('\') -ieq $InstallDir.TrimEnd('\') })) {
+            $normalizedInstallDir = [Environment]::ExpandEnvironmentVariables($InstallDir).TrimEnd('\', '/')
+            if (-not ($entries | Where-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\', '/') -ieq $normalizedInstallDir })) {
                 $newPath = (@($entries) + $InstallDir) -join ';'
                 $key.SetValue('Path', $newPath, $kind)
                 $env:Path = "$env:Path;$InstallDir"

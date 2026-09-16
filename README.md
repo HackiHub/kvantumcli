@@ -42,9 +42,10 @@ They require HTTPS for initial requests and redirects.
 
 `KVANTUMCI_DOWNLOAD_BASE_URL` must be an absolute HTTPS root containing
 `<tag>/<filename>` paths and serve the same signed manifest and assets. The
-installer resolves `latest` once before fetching any assets, so all downloads
-use one tag. A failed installation leaves an existing destination binary in
-place.
+installer resolves `latest` through GitHub once before fetching any assets, so
+all downloads use one tag. A mirror therefore does not make `latest` offline:
+choose an explicit release version when GitHub cannot be reached. A failed
+installation leaves an existing destination binary in place.
 
 ## Build
 
@@ -80,7 +81,10 @@ Unix mode bits; protect the containing user profile and any path selected with
 `KVANTUMCI_CONFIG`.
 
 Use interactive configuration when possible. Token entry does not echo in a
-terminal.
+terminal. If you provide only some configuration flags, an interactive terminal
+prompts for the remaining required values. A non-interactive invocation with
+missing required values fails instead of waiting for input. Interrupting a
+prompt restores the terminal before the command exits.
 
 ```bash
 kvantumci configure
@@ -123,27 +127,44 @@ kvantumci whoami
 kvantumci project create --name demo
 kvantumci integration list
 kvantumci repo add --project <uuid> --integration <uuid> --name my-repo
-kvantumci verify run --repo <repoId>
 ```
 
-For a repository run, a current typed API response returns the verification ID
-at `.data.verificationId`. Pass that exact value to the next commands:
+For a repository run, the deployed API must return the typed repository-run
+contract from API PR #419: a wrapped response with the verification ID at
+`.data.verificationId`. PR #419 merged as `f4c5d782`, but that only verifies
+API source; this checkout does not establish deployment to an environment you
+use. Extract and validate the returned ID before waiting:
 
 ```bash
-kvantumci verify wait <verificationId>
-kvantumci results summary --verification <verificationId> --timeout 5m
+repo_id='repository-uuid' # Replace with the ID returned by `repo add`.
+if ! run_response="$(kvantumci verify run --repo "$repo_id")"; then
+  exit 1
+fi
+if ! verification_id="$(printf '%s' "$run_response" | jq -er \
+  '.data.verificationId | select(type == "string" and length > 0)')"; then
+  printf '%s\n' 'Repository run returned no usable verification ID; stopping.' >&2
+  exit 1
+fi
+kvantumci verify wait "$verification_id" && \
+  kvantumci results summary --verification "$verification_id" --timeout 5m
 ```
 
-Older repository-run responses can be empty and provide no usable ID.
-`verify latest` finds the newest completed run, which can be an earlier run; do
-not use it to associate a just-requested verification. Project-wide runs retain
-their API response as returned.
+This example requires `jq`. The guards prevent an empty or non-string ID from
+being passed to the shell or to `verify wait`.
+
+An empty `201 Created` response prints `null` and exits successfully because
+the request was accepted, but it supplies no usable ID. Stop that workflow;
+do not invent an ID, retry the POST, or use `verify latest` to correlate it.
+`verify latest` finds the newest completed run, which can be an earlier run.
+Project-wide runs retain their API response as returned.
+
+Successful API responses are limited to 64 MiB. A response over that limit is
+rejected rather than being treated as a truncated success.
 
 `results summary` counts rule outcomes, rather than distinct bugs. A null result
 status is counted as `unknown`, which means the result is incomplete. A successful
 summary exits zero by default. In a gate, use `--fail-on-findings`; JSON is still
-written first, then the command exits nonzero when `fail` or `unknown` outcomes
-exist.
+written first, then the command exits 3 when `fail` or `unknown` outcomes exist.
 
 `findings list` is tenant-wide unless `--verification` is supplied:
 

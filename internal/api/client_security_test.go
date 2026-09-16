@@ -50,6 +50,10 @@ func TestClientRefusesCredentialCrossOriginRedirect(t *testing.T) {
 	if err == nil || called {
 		t.Fatalf("err=%v called=%v", err, called)
 	}
+	var requestErr *api.RequestError
+	if !errors.As(err, &requestErr) || requestErr.Kind != api.RequestFailureRedirect || api.IsTransientRequestError(err) {
+		t.Fatalf("redirect misclassified: %v", err)
+	}
 }
 
 func TestClientErrorBodyIsBoundedAndRedacted(t *testing.T) {
