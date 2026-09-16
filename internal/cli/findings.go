@@ -23,7 +23,8 @@ func newFindingsListCmd(opts *rootOptions) *cobra.Command {
 	var page, limit int
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List rule-check outcomes",
+		Short: "List rule-check outcomes (tenant-wide unless --verification is set)",
+		Long:  "List rule-check outcomes across the tenant. Set --verification to limit results to one verification.",
 		Args:  cobra.NoArgs,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if status != "" && status != "fail" && status != "pass" && status != "skip" {
@@ -43,7 +44,7 @@ func newFindingsListCmd(opts *rootOptions) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				return client.ListResultsFiltered(ctx, api.ResultsListOptions{
+				return client.ListResultsFiltered(cmd.Context(), api.ResultsListOptions{
 					VerificationID: verificationID,
 					ResultStatus:   status,
 					Page:           page,
@@ -52,7 +53,7 @@ func newFindingsListCmd(opts *rootOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&verificationID, "verification", "", "Filter by verification UUID")
+	cmd.Flags().StringVar(&verificationID, "verification", "", "Filter by verification UUID (default: all tenant results)")
 	cmd.Flags().StringVar(&status, "status", "", "Filter by result status: fail, pass, or skip")
 	cmd.Flags().IntVar(&page, "page", 1, "Results page number")
 	cmd.Flags().IntVar(&limit, "limit", 10, "Results per page (1-100)")

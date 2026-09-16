@@ -19,8 +19,38 @@ type ResultsListOptions struct {
 
 // ResultOutcome is the subset of a result needed for aggregate summaries.
 type ResultOutcome struct {
-	Status  string         `json:"status"`
+	Status  *string        `json:"status"`
 	Finding *ResultFinding `json:"finding"`
+}
+
+// UnmarshalJSON requires the status field while preserving an explicit null.
+func (o *ResultOutcome) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if fields == nil {
+		return fmt.Errorf("result must be an object")
+	}
+	status, ok := fields["status"]
+	if !ok {
+		return fmt.Errorf("result status is required")
+	}
+	var parsed struct {
+		Status  *string        `json:"status"`
+		Finding *ResultFinding `json:"finding"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return err
+	}
+	if string(bytes.TrimSpace(status)) != "null" && parsed.Status == nil {
+		return fmt.Errorf("result status is invalid")
+	}
+	if parsed.Status != nil && *parsed.Status != "fail" && *parsed.Status != "pass" && *parsed.Status != "skip" {
+		return fmt.Errorf("invalid result status %q", *parsed.Status)
+	}
+	o.Status, o.Finding = parsed.Status, parsed.Finding
+	return nil
 }
 
 // ResultFinding is the finding metadata attached to a rule-check outcome.
@@ -119,6 +149,9 @@ func (c *Client) ListAllResults(ctx context.Context, verificationID string) ([]R
 	expectedTotal := -1
 	expectedLastPage := -1
 	for requestedPage := 1; requestedPage <= maxPages; requestedPage++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		page, err := c.ListResultsPage(ctx, ResultsListOptions{
 			VerificationID: verificationID,
 			Page:           requestedPage,

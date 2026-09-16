@@ -1,0 +1,9 @@
+{
+  "statusCode": 200,
+  "data": {
+    "verificationId": "verification-acceptance-1",
+    "outcome": "queued",
+    "scanDispatch": "queued",
+    "bomDispatch": "queued"
+  }
+}

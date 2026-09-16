@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 
 	"github.com/spf13/cobra"
 
@@ -22,8 +24,13 @@ type rootOptions struct {
 func Execute() {
 	opts := &rootOptions{}
 	root := newRootCmd(opts)
-	if err := root.Execute(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	if err := root.ExecuteContext(ctx); err != nil {
 		output.Error(err)
+		if errors.Is(err, ErrFindingsRejected) {
+			os.Exit(3)
+		}
 		os.Exit(1)
 	}
 }
@@ -37,7 +44,7 @@ func newRootCmd(opts *rootOptions) *cobra.Command {
 	}
 
 	cmd.PersistentFlags().StringVar(&opts.apiURL, "api-url", "", "API base URL (or KVANTUMCI_API_URL)")
-	cmd.PersistentFlags().StringVar(&opts.token, "token", "", "Bearer PAT/GAT token (or KVANTUMCI_TOKEN)")
+	cmd.PersistentFlags().StringVar(&opts.token, "token", "", "Bearer PAT/GAT token (warning: visible in shell history/process listings; prefer KVANTUMCI_TOKEN)")
 	cmd.PersistentFlags().StringVar(&opts.tenantID, "tenant-id", "", "Tenant ID for x-tenant-id (or KVANTUMCI_TENANT_ID)")
 
 	cmd.AddCommand(newConfigureCmd(opts))
@@ -82,6 +89,14 @@ func newClient(opts *rootOptions, requireAuth bool) (*api.Client, config.Config,
 func runJSON(fn func(ctx context.Context) (any, error)) error {
 	ctx := context.Background()
 	v, err := fn(ctx)
+	if err != nil {
+		return err
+	}
+	return output.JSON(v)
+}
+
+func runJSONContext(cmd *cobra.Command, fn func(context.Context) (any, error)) error {
+	v, err := fn(cmd.Context())
 	if err != nil {
 		return err
 	}
