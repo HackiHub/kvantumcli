@@ -149,21 +149,37 @@ func summaryFetchError(err, waitErr error, verificationID string, timeout time.D
 
 func newResultsListCmd(opts *rootOptions) *cobra.Command {
 	var verificationID string
+	var page, limit int
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List rule-check results",
 		Args:  cobra.NoArgs,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if page < 1 || page > 100000 {
+				return fmt.Errorf("invalid --page %d: must be between 1 and 100000", page)
+			}
+			if limit < 1 || limit > 100 {
+				return fmt.Errorf("invalid --limit %d: must be between 1 and 100", limit)
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(func(ctx context.Context) (any, error) {
 				client, _, err := newClient(opts, true)
 				if err != nil {
 					return nil, err
 				}
-				return client.ListResults(cmd.Context(), verificationID)
+				return client.ListResultsFiltered(cmd.Context(), api.ResultsListOptions{
+					VerificationID: verificationID,
+					Page:           page,
+					Limit:          limit,
+				})
 			})
 		},
 	}
 	cmd.Flags().StringVar(&verificationID, "verification", "", "Filter by verification UUID")
+	cmd.Flags().IntVar(&page, "page", 1, "Results page number (1-100000)")
+	cmd.Flags().IntVar(&limit, "limit", 10, "Results per page (1-100)")
 	return cmd
 }
 

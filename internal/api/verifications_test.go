@@ -35,6 +35,21 @@ func TestLatestFinishedVerificationFiltersAndReturnsFirst(t *testing.T) {
 	}
 }
 
+func TestListVerificationsPassesPagination(t *testing.T) {
+	t.Setenv("KVANTUMCI_ALLOW_HTTP", "true")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/verifications" || r.URL.Query().Get("page") != "3" || r.URL.Query().Get("limit") != "250" {
+			t.Errorf("request = %s", r.URL.String())
+		}
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv.Close()
+
+	if _, err := api.New(srv.URL, "token", "tenant").ListVerifications(context.Background(), 3, 250); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLatestFinishedVerificationEmpty(t *testing.T) {
 	t.Setenv("KVANTUMCI_ALLOW_HTTP", "true")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -130,6 +130,17 @@ kvantumci integration list
 kvantumci repo add --project <uuid> --integration <uuid> --name my-repo
 ```
 
+To select one of several integrations for the same provider, discover its
+resources explicitly and use the returned resource ID when adding the
+repository. Git integrations need a branch as well:
+
+```bash
+kvantumci integration resources github --integration <integration-uuid>
+kvantumci integration branches github <resource-id> --integration <integration-uuid>
+kvantumci repo add --project <project-uuid> --integration <integration-uuid> \
+  --name my-repo --resource-id <resource-id> --branch <branch-name>
+```
+
 For a repository run, the deployed API must return the typed repository-run
 contract from API PR #419: a wrapped response with the verification ID at
 `.data.verificationId`. PR #419 merged as `f4c5d782`, but that only verifies

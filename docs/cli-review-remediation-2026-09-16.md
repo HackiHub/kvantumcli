@@ -1,35 +1,86 @@
 # CLI review remediation ledger
 
-This ledger records the implementation work for the 2026-09-16 CLI review. It
-describes source in this checkout. It does not establish that a server contract
-is deployed or that a release has been published.
+This ledger records the remediation work for the 2026-09-16 CLI review. It
+describes the current working tree. It does not establish that a server contract
+is deployed, that a release has been published, or that native Windows and Linux
+interactive validation has passed.
 
 ## Contract source
 
-Sanitized API fixtures are based on API source commit `5c32282`:
-`src/verifications/verifications.controller.ts` for repository-run responses
-and `src/results/results.schema.ts` for result rows. See
+Sanitized API fixtures are based on merged API commit
+`f4c5d782d2e2155b5fd7efd4f64fbc86b24d958f` (API PR #419). Repository-run and
+verification-detail endpoints are wrapped responses; list endpoints, including
+results, are flat pagination objects. See
 [`internal/api/testdata/README.md`](../internal/api/testdata/README.md). This is
 source-level fixture provenance, not deployed API validation.
 
 ## Findings
 
+The IDs below follow the additional PR #5 review and its follow-up plan.
+
 | Review items | Status | Changed files | Local checks |
 | --- | --- | --- | --- |
-| B1, B2 | Implemented. Verification detail reads `data.status`; repository runs preserve the typed response, whose current contract exposes `.data.verificationId`. Empty legacy responses provide no ID. | `internal/api/verifications.go`, `internal/api/wait.go`, `internal/cli/verify.go`, their tests, `internal/api/testdata/*`, `cmd/kvantumci/acceptance_test.go` | Unit and process acceptance cases cover running, finished, error, malformed detail, and run → wait. |
-| B3 | Implemented in source, release activation pending. Installers verify a signed six-asset manifest and binary hash against a pinned certificate fingerprint. | `install.sh`, `install.ps1`, `Makefile`, `.github/workflows/release.yml`, `tests/install_sh_test.sh`, `tests/windows_installer_test.go` | The POSIX suite passed locally for valid/latest installation, tampered binary and manifest, missing or duplicate manifest entries, missing certificate, failed asset download, HTTP URL rejection, TERM interruption cleanup and exit `143`, destination preservation, and fail-closed behavior. Windows validation remains pending. |
-| B4 | Implemented in source. Both installers validate the configured download base as an absolute HTTPS URL before fetching release assets. | `install.sh`, `install.ps1`, `tests/install_sh_test.sh`, `tests/windows_installer_test.go` | POSIX HTTP URL rejection passed locally. Redirect-downgrade coverage is not recorded in the current installer suite. |
-| M1, M2 | Implemented. Installer downloads use HTTPS only, resolve `latest` once, validate repository/version/URLs, stage a verified binary, and fail without replacing an existing binary. | `install.sh`, `install.ps1`, `tests/install_sh_test.sh`, `tests/windows_installer_test.go` | POSIX installer cases listed for B3 passed locally. Windows validation remains pending. |
-| M3 | Implemented in source. The PowerShell installer preserves unexpanded user PATH values and registry kind, avoids duplicate entries, and supports `-NoPathUpdate`. | `install.ps1`, `tests/windows_installer_test.go` | Windows installer test suite exists; Windows runner validation remains pending. |
-| M4 | Implemented. Config writes use a private same-directory temporary file, reject symlinks, preserve existing data on failure, and use a protected DACL for Windows temporary files. | `internal/config/config.go`, `internal/config/private_temp_unix.go`, `internal/config/private_temp_windows.go`, `internal/config/security_test.go`, `internal/config/security_windows_test.go` | Config security tests cover permissions, symlinks, and failed replacement. |
-| M5, M6 | Implemented. Terminal token entry is hidden; prompt input avoids buffered read-ahead. `--token` remains available with an exposure warning. | `internal/cli/login.go`, `internal/cli/login_security_test.go`, `internal/cli/root.go` | Login security and command tests cover prompt/configuration paths. |
-| M7, M8, M9 | Implemented. HTTPS is required by default, development HTTP needs `KVANTUMCI_ALLOW_HTTP=true`, auth redirects cannot cross origin, error bodies are bounded and allowlisted, and configure returns selected identity fields only. | `internal/config/config.go`, `internal/api/client.go`, `internal/api/client_security_test.go`, `internal/cli/login.go`, `internal/cli/login_security_test.go` | Client and login security tests cover transport, redirects, redaction, and identity output. |
-| M10, m1, m2, m3 | Implemented. Nullable result status is `unknown`; summaries reconcile all count buckets, default to a five-minute timeout, and offer opt-in `--fail-on-findings`. Findings remain tenant-wide unless filtered by `--verification`. | `internal/api/results.go`, `internal/cli/results.go`, `internal/cli/findings.go`, related tests | Results tests cover null status, pagination, timeout, cancellation, default and gated exits, plus tenant-wide and filtered findings queries. |
-| M11 | Implemented in source. CI defines formatting, vet, build, unit, race, and cross-platform test jobs; release drafting is separate. | `.github/workflows/ci.yml`, `.github/workflows/release.yml` | Workflow files are present. Required-check and branch-protection configuration are repository settings, not verified here. |
-| M12, m8, m9, m10, m11 | Implemented. Added command/process acceptance coverage, output writer failure coverage, fixture provenance, and targeted security/installer tests. | `cmd/kvantumci/acceptance_test.go`, `internal/output/output_test.go`, `internal/api/testdata/*`, test files above | `go test ./...` passes on this macOS checkout; platform-specific installer checks need their matching runners. |
-| m4, m5, m6, m7 | Implemented with the credential, transport, and verification changes listed above. | `internal/config/*`, `internal/cli/login.go`, `internal/api/client.go`, `internal/api/{verifications,wait}.go` | Focused security, API, and CLI test files listed above. |
-| m12 | Deferred. The finding concerns ignored required-flag registration errors caused only by programmer typos. | No dedicated change. | Existing command construction tests remain the coverage point. |
-| m13 | Deferred. The deleted OAuth plan has no established current product intent. | No change. | Requires a product-history decision before documentation is restored. |
+| B1, M1, M2, m2, m3, m4, m5, m10, m12 | Implemented in the working tree. Installers validate HTTPS URLs and redirects, snapshot and pin the certificate, require RSA-3072, retain default TLS negotiation, stage verified binaries, and add trust and redirect cases. Release builds add deterministic path/build metadata controls. | `install.sh`, `install.ps1`, `Makefile`, `.github/workflows/release.yml`, installer tests | macOS tests and the Windows compile check passed. Native Windows installer validation remains pending. Production pin/bootstrap provisioning is still required. |
+| B2 | Implemented in the working tree. Repository runs preserve the typed response and verification detail reads `data.status`. Empty `201` responses print `null` and provide no ID. Documentation now requires the deployed #419 typed contract before chaining run to wait. | `internal/api/verifications.go`, `internal/api/wait.go`, `internal/cli/verify.go`, `internal/api/testdata/*`, `cmd/kvantumci/acceptance_test.go`, user docs | On macOS with Go 1.26.5, the full Go test suite passed, including typed run → wait and empty-201/no-follow-up acceptance coverage. |
+| M3, M4, m6 | Implemented in the working tree. Successful API bodies are capped at 64 MiB; error details are bounded and sanitized; credentials are redacted before truncation; transport errors have safe retry classification. | `internal/api/client.go`, `internal/api/client_limits_test.go`, `internal/api/client_security_test.go` | On macOS with Go 1.26.5, the full Go test suite passed, covering response limits, sanitization, and retry classification. |
+| M5 | Implemented in the working tree. `verify wait` retries only safe transient GET failures with bounded cancellation-aware backoff and optional bounded `Retry-After`; it preserves the last failure on an overall timeout. | `internal/api/wait.go`, `internal/api/client_test.go` | On macOS with Go 1.26.5, the full Go test suite passed, covering transient recovery, fatal HTTP failures, cancellation/backoff, and deadline context. |
+| M6, M7, M8, m1, m8 | Implemented in the working tree. Prompt handling has explicit secret fields, prompts missing fields on interactive partial configuration, accepts final-EOF input, refuses zero-progress reads, and restores terminal state on cancellation. A Windows NOWAIT console implementation and native test path have been added. | `internal/cli/login.go`, `internal/cli/root.go`, prompt helpers and tests | A real macOS process PTY regression passed independently: hidden token entry, SIGINT cancellation, echo restoration, and unchanged config. Windows and Linux compile checks passed; native Windows console and Linux PTY execution remain pending. |
+| m7 | Implemented in the working tree. Summary timeout errors name the verification and effective timeout, emit no partial JSON, and the opted-in findings gate exits 3 after complete JSON. | `internal/cli/results.go`, `internal/cli/results_test.go`, `cmd/kvantumci/acceptance_test.go` | On macOS with Go 1.26.5, the full Go test suite passed, including summary timeout and process exit-3 coverage. |
+| m9 | Acceptance and fixture work is present in the working tree: synchronized poll counting, typed and empty-201 process paths, exit-code coverage, and merged API fixture provenance. | `cmd/kvantumci/acceptance_test.go`, `internal/api/testdata/*` | On macOS with Go 1.26.5, the full Go test suite passed. |
+| m11 | Documented. A mirror serves versioned release assets, while `latest` still asks GitHub to resolve the release tag; an explicit version is required for an offline mirror. | `README.md` | README guarded workflow was exercised independently with real `jq` and a mocked CLI: typed ID succeeds; null/numeric IDs, run failure, and wait failure stop; each case sends one run. |
+
+## Deliberate refinements
+
+- Non-JSON upstream error bodies produce a static explanation; arbitrary proxy
+  text is never echoed. When a credential has three or fewer characters, error
+  detail is suppressed rather than risking incomplete redaction.
+- Only verification polling GETs retry, and only after 408, 429, 500, 502, 503,
+  504, or classified transient transport failures. POST dispatches, permanent
+  client errors, malformed responses, TLS failures, and redirect-policy failures
+  do not retry.
+- Final code and security review found no further source changes to request.
+  The native-platform and deployment limitations below remain open validation
+  work.
+
+## Validation record
+
+On macOS arm64 with Go 1.26.5, `gofmt -l` produced no output and `git diff
+--check` passed. The following also passed:
+
+```text
+go vet ./...
+go build ./...
+sh tests/install_sh_test.sh
+go test ./... -count=1
+go test -race ./... -count=1
+```
+
+Both test commands passed all five packages. These cross-compilation checks also
+passed without executing tests on the target operating systems:
+
+```text
+GOOS=windows GOARCH=amd64 go test ./internal/cli ./tests -run '^$' -exec=true
+GOOS=linux GOARCH=amd64 go test ./internal/cli -run '^$' -exec=true
+```
+
+Isolated baseline comparisons covered the sensitive regressions. Before this
+change, the POSIX installer rejected an A-signed manifest after its certificate
+path changed from A to B with `release manifest signature is invalid`; the
+current implementation accepts it from the pinned A snapshot. The old
+PowerShell `Assert-HttpsUrl` rejected a signed redirect query with `Invalid
+HTTPS download URL`; the current implementation accepts it under local pwsh.
+The full Windows fixture still needs native execution. The old polling case
+stopped at poll 1 with HTTP 502; the current 502 → `finished` case passes. The
+old PTY Ctrl-C case remained blocked for more than one second with ECHO disabled;
+the current case passes 20 repeats.
+
+Two clean working paths built all six release assets with the same local
+toolchain. Their SHA-256 hashes matched asset by asset. This records a
+same-toolchain repeat-build check, not reproducibility across arbitrary Go
+versions or source provenance.
+
+Native Windows installer and console validation, Linux PTY execution, and
+deployed API-contract validation remain pending.
 
 ## Release prerequisites
 

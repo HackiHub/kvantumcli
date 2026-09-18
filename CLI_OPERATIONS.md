@@ -39,7 +39,7 @@ prompt restores the terminal before exit.
 | `project list [--page 1] [--limit 10] [--search <q>] [--tags a,b]` | List projects | `GET /projects` |
 | `project get <projectId>` | Get project detail with child tree and repositories | `GET /projects/{id}` |
 
-Create body: `{ name, parentId?, icon?, tags? }`. Permission: `project:create`.
+Create body: `{ name, parentId?, icon?, tags? }`. Tags are comma-separated, trimmed, and empty CSV segments are ignored. A project accepts at most 20 tags, with each tag limited to 64 UTF-16 code units. Permission: `project:create`.
 
 ## Repositories
 
@@ -57,11 +57,17 @@ Permission: `project:repository:create`.
 | CLI command | Description | API |
 | --- | --- | --- |
 | `integration list` | List tenant integrations | `GET /integrations` |
-| `integration resources <provider>` | List provider repositories/resources | `GET /integrations/{provider}/resources` |
-| `integration branches <provider> <resourceId>` | List branches for a resource | `GET /integrations/{provider}/resources/{resourceId}/branches` |
+| `integration resources <provider> [--integration <uuid>]` | List provider repositories/resources | `GET /integrations/{provider}/resources` or `GET /integrations/byintegration/{uuid}/resources` |
+| `integration branches <provider> <resourceId> [--integration <uuid>]` | List branches for a resource | `GET /integrations/{provider}/resources/{resourceId}/branches` or `GET /integrations/byintegration/{uuid}/resources/{resourceId}/branches` |
 
 Providers: `github`, `gitlab`, `jenkins`, `nexus`, `jfrog`, `azure_repos`, and
 `aws`. Permission: `integrations:read`.
+
+When a tenant has more than one integration for a provider, pass its ID from
+`integration list` as `--integration`. The CLI checks that the selected
+integration belongs to the positional provider before discovery. Use the
+returned resource ID with `repo add --integration <uuid> --resource-id <id>`;
+Git integrations also require a branch selected with `integration branches`.
 
 ## Verifications
 
@@ -69,7 +75,7 @@ Providers: `github`, `gitlab`, `jenkins`, `nexus`, `jfrog`, `azure_repos`, and
 | --- | --- | --- |
 | `verify run --repo <repoId> [--types sbom,cbom,aibom,mlbom]` | Run one repository verification | `POST /verifications/run/repository/{projectRepositoryId}/{tenantId}` |
 | `verify run --project <projectId> --all-repos [--types ...] --confirm` | Run all project repositories after explicit confirmation | `POST /verifications/run/{projectId}/{tenantId}` |
-| `verify list` | List verification runs | `GET /verifications` |
+| `verify list [--page 1] [--limit 10]` | List verification runs | `GET /verifications` |
 | `verify latest --repo <repoId>` | Get the newest finished verification for a repository | `GET /verifications?projectRepositoryId=<repoId>&status=finished&page=1&limit=1` |
 | `verify get <verificationId>` | Get one verification detail | `GET /verifications/{id}` |
 | `verify wait <verificationId> [--interval 5s] [--timeout 30m]` | Poll until `finished` or `error` | `GET /verifications/{id}` |
@@ -112,12 +118,16 @@ Permission: `billofmaterials:read`.
 | --- | --- | --- |
 | `findings list [--verification <uuid>] [--status fail\|pass\|skip] [--page 1] [--limit 10]` | List rule-check outcomes across the tenant, or one verification | `GET /results` |
 | `results summary --verification <uuid> [--timeout 5m] [--fail-on-findings]` | Fetch every result page and summarize one verification | `GET /results` |
-| `results list [--verification <uuid>]` | List raw rule-check results | `GET /results` |
+| `results list [--verification <uuid>] [--page 1] [--limit 10]` | List raw rule-check results | `GET /results` |
 | `results get <resultId>` | Get one result with evidence | `GET /results/{id}` |
 
 `findings list` is tenant-wide when `--verification` is omitted. The optional
 `--status` filter accepts `fail`, `pass`, or `skip`. `page` defaults to `1` and
 `limit` defaults to `10`, with values from `1` to `100`.
+
+`verify list` and `results list` also default to page `1` and limit `10`.
+Their page range is `1`–`100000`; verification limits are `1`–`500`, and result
+limits are `1`–`100`.
 
 `results summary` has a five-minute timeout by default. `--timeout` accepts a
 positive Go duration such as `30s` or `5m`. It returns `verificationId`,

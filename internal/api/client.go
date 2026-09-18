@@ -43,18 +43,21 @@ const (
 
 // RequestError contains a safe printable classification of a transport failure.
 type RequestError struct {
-	Kind  RequestFailureKind
-	cause error
+	Kind   RequestFailureKind
+	Target string
+	Reason string
+	cause  error
 }
 
 func (e *RequestError) Error() string {
-	if e.Kind == RequestFailureCanceled {
-		return "API request failed: context canceled"
+	message := e.Reason
+	if message == "" {
+		message = string(e.Kind)
 	}
-	if e.Kind == RequestFailureTimeout {
-		return "API request failed: context deadline exceeded"
+	if e.Target == "" {
+		return "API request failed: " + message
 	}
-	return "API request failed: " + string(e.Kind)
+	return "API request to " + e.Target + " failed: " + message
 }
 func (e *RequestError) Unwrap() error { return e.cause }
 
@@ -156,7 +159,7 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, classifyRequestError(err, ctx.Err(), redirectRejected)
+		return nil, classifyRequestError(err, ctx.Err(), redirectRejected, requestTarget(req.URL))
 	}
 	defer resp.Body.Close()
 
@@ -170,7 +173,7 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 		if !success {
 			return nil, &APIError{StatusCode: resp.StatusCode, Body: "upstream error response could not be read", RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"))}
 		}
-		return nil, classifyRequestError(err, ctx.Err(), false)
+		return nil, classifyRequestError(err, ctx.Err(), false, requestTarget(req.URL))
 	}
 
 	if !success {
@@ -195,38 +198,74 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 	return json.RawMessage(respBody), nil
 }
 
-func classifyRequestError(err, contextErr error, redirectRejected bool) error {
+func classifyRequestError(err, contextErr error, redirectRejected bool, target string) error {
 	if contextErr != nil {
 		if errors.Is(contextErr, context.Canceled) {
-			return &RequestError{Kind: RequestFailureCanceled, cause: context.Canceled}
+			return &RequestError{Kind: RequestFailureCanceled, Target: target, Reason: "context canceled", cause: context.Canceled}
 		}
-		return &RequestError{Kind: RequestFailureTimeout, cause: context.DeadlineExceeded}
+		return &RequestError{Kind: RequestFailureTimeout, Target: target, Reason: "request timed out", cause: context.DeadlineExceeded}
 	}
 	if redirectRejected {
-		return &RequestError{Kind: RequestFailureRedirect}
+		return &RequestError{Kind: RequestFailureRedirect, Target: target, Reason: "redirect policy rejected request"}
 	}
 	if errors.Is(err, context.Canceled) {
-		return &RequestError{Kind: RequestFailureCanceled, cause: context.Canceled}
+		return &RequestError{Kind: RequestFailureCanceled, Target: target, Reason: "context canceled", cause: context.Canceled}
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
-		return &RequestError{Kind: RequestFailureTimeout, cause: context.DeadlineExceeded}
+		return &RequestError{Kind: RequestFailureTimeout, Target: target, Reason: "request timed out", cause: context.DeadlineExceeded}
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		if dnsErr.IsTimeout {
+			return &RequestError{Kind: RequestFailureTimeout, Target: target, Reason: "DNS lookup timed out", cause: err}
+		}
+		if dnsErr.IsTemporary {
+			return &RequestError{Kind: RequestFailureTransient, Target: target, Reason: "temporary DNS lookup failure", cause: err}
+		}
+		return &RequestError{Kind: RequestFailurePermanent, Target: target, Reason: "DNS lookup failed", cause: err}
 	}
 	var certInvalid x509.CertificateInvalidError
 	var certUnknown x509.UnknownAuthorityError
 	var certHost x509.HostnameError
 	var certVerify *tls.CertificateVerificationError
 	var tlsHeader tls.RecordHeaderError
-	if errors.As(err, &certInvalid) || errors.As(err, &certUnknown) || errors.As(err, &certHost) || errors.As(err, &certVerify) || errors.As(err, &tlsHeader) {
-		return &RequestError{Kind: RequestFailureTLS}
+	if errors.As(err, &certHost) {
+		return &RequestError{Kind: RequestFailureTLS, Target: target, Reason: "certificate hostname verification failed", cause: err}
+	}
+	if errors.As(err, &certInvalid) || errors.As(err, &certUnknown) || errors.As(err, &certVerify) {
+		return &RequestError{Kind: RequestFailureTLS, Target: target, Reason: "certificate trust verification failed", cause: err}
+	}
+	if errors.As(err, &tlsHeader) {
+		return &RequestError{Kind: RequestFailureTLS, Target: target, Reason: "TLS handshake failed", cause: err}
 	}
 	var netErr net.Error
-	if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
-		return &RequestError{Kind: RequestFailureTransient}
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return &RequestError{Kind: RequestFailureTimeout, Target: target, Reason: "request timed out", cause: err}
 	}
-	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-		return &RequestError{Kind: RequestFailureTransient}
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return &RequestError{Kind: RequestFailureTransient, Target: target, Reason: "connection refused", cause: err}
 	}
-	return &RequestError{Kind: RequestFailurePermanent}
+	if errors.As(err, &netErr) && netErr.Temporary() {
+		return &RequestError{Kind: RequestFailureTransient, Target: target, Reason: "temporary network failure", cause: err}
+	}
+	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return &RequestError{Kind: RequestFailureTransient, Target: target, Reason: "connection interrupted", cause: err}
+	}
+	return &RequestError{Kind: RequestFailurePermanent, Target: target, Reason: "network request failed", cause: err}
+}
+
+func requestTarget(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	host := u.Hostname()
+	if host == "" {
+		return ""
+	}
+	if port := u.Port(); port != "" {
+		return net.JoinHostPort(host, port)
+	}
+	return host
 }
 
 func parseRetryAfter(value string) time.Duration {

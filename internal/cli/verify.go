@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -97,20 +98,33 @@ func newVerifyRunCmd(opts *rootOptions) *cobra.Command {
 }
 
 func newVerifyListCmd(opts *rootOptions) *cobra.Command {
-	return &cobra.Command{
+	var page, limit int
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List verification runs",
 		Args:  cobra.NoArgs,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if page < 1 || page > 100000 {
+				return fmt.Errorf("invalid --page %d: must be between 1 and 100000", page)
+			}
+			if limit < 1 || limit > 500 {
+				return fmt.Errorf("invalid --limit %d: must be between 1 and 500", limit)
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSONContext(cmd, func(ctx context.Context) (any, error) {
 				client, _, err := newClient(opts, true)
 				if err != nil {
 					return nil, err
 				}
-				return client.ListVerifications(ctx)
+				return client.ListVerifications(ctx, page, limit)
 			})
 		},
 	}
+	cmd.Flags().IntVar(&page, "page", 1, "Verification page number (1-100000)")
+	cmd.Flags().IntVar(&limit, "limit", 10, "Verifications per page (1-500)")
+	return cmd
 }
 
 func newVerifyGetCmd(opts *rootOptions) *cobra.Command {

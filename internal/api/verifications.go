@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 )
 
 // ErrNoFinishedVerification indicates that a repository has no finished run.
@@ -29,9 +30,16 @@ func (c *Client) RunVerificationForProject(ctx context.Context, projectID, tenan
 	return c.Post(ctx, path, req)
 }
 
-// ListVerifications calls GET /verifications.
-func (c *Client) ListVerifications(ctx context.Context) (json.RawMessage, error) {
-	return c.Get(ctx, "/verifications", nil)
+// ListVerifications calls GET /verifications with pagination.
+func (c *Client) ListVerifications(ctx context.Context, page, limit int) (json.RawMessage, error) {
+	q := url.Values{}
+	if page > 0 {
+		q.Set("page", strconv.Itoa(page))
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	return c.Get(ctx, "/verifications", q)
 }
 
 // LatestFinishedVerification returns the newest finished verification for a repository.
