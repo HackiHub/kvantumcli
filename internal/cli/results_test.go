@@ -106,6 +106,57 @@ func TestResultsSummaryExitPolicyAndTimeout(t *testing.T) {
 	}
 }
 
+func TestResultsSummaryRejectsUnknownVerificationWithoutOutput(t *testing.T) {
+	t.Setenv("KVANTUMCI_ALLOW_HTTP", "true")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/results" || r.URL.Query().Get("verificationId") != "missing" {
+			t.Errorf("request = %s", r.URL.String())
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"Verification not found"}`))
+	}))
+	defer srv.Close()
+
+	cmd := newResultsSummaryCmd(&rootOptions{apiURL: srv.URL, token: "token", tenantID: "tenant"})
+	cmd.SetArgs([]string{"--verification", "missing", "--fail-on-findings"})
+	previous := os.Stdout
+	file, err := os.CreateTemp(t.TempDir(), "summary-missing-*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = file
+	defer func() { os.Stdout = previous; _ = file.Close() }()
+
+	err = cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "HTTP 404") {
+		t.Fatalf("error = %v", err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("printed %d bytes for unknown verification", info.Size())
+	}
+}
+
+func TestResultsSummaryAllowsZeroOutcomeVerification(t *testing.T) {
+	t.Setenv("KVANTUMCI_ALLOW_HTTP", "true")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/results" || r.URL.Query().Get("verificationId") != "empty" {
+			t.Errorf("request = %s", r.URL.String())
+		}
+		_, _ = w.Write([]byte(`{"data":[],"total":0,"page":1,"limit":100,"lastPage":1,"hasNext":false}`))
+	}))
+	defer srv.Close()
+
+	cmd := newResultsSummaryCmd(&rootOptions{apiURL: srv.URL, token: "token", tenantID: "tenant"})
+	cmd.SetArgs([]string{"--verification", "empty", "--fail-on-findings"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestResultsSummaryRespectsCanceledContext(t *testing.T) {
 	opts := &rootOptions{apiURL: "https://example.test", token: "token", tenantID: "tenant"}
 	cmd := newResultsSummaryCmd(opts)

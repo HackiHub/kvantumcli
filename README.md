@@ -76,9 +76,10 @@ Config files are located at:
 - Windows: `%AppData%\\kvantumci\\config.json`
 
 The CLI writes configuration through a private temporary file and rejects a
-config-file symlink. On Unix the saved file mode is `0600`. Windows does not use
-Unix mode bits; protect the containing user profile and any path selected with
-`KVANTUMCI_CONFIG`.
+config-file symlink. On Unix the saved file mode is `0600`. On Windows, it
+automatically applies a restrictive ACL that grants access only to the current
+user and SYSTEM. Keep any custom path selected with `KVANTUMCI_CONFIG` in a
+directory that is not writable by untrusted users.
 
 Use interactive configuration when possible. Token entry does not echo in a
 terminal. If you provide only some configuration flags, an interactive terminal
@@ -129,6 +130,17 @@ kvantumci integration list
 kvantumci repo add --project <uuid> --integration <uuid> --name my-repo
 ```
 
+To select one of several integrations for the same provider, discover its
+resources explicitly and use the returned resource ID when adding the
+repository. Git integrations need a branch as well:
+
+```bash
+kvantumci integration resources github --integration <integration-uuid>
+kvantumci integration branches github <resource-id> --integration <integration-uuid>
+kvantumci repo add --project <project-uuid> --integration <integration-uuid> \
+  --name my-repo --resource-id <resource-id> --branch <branch-name>
+```
+
 For a repository run, the deployed API must return the typed repository-run
 contract from API PR #419: a wrapped response with the verification ID at
 `.data.verificationId`. PR #419 merged as `f4c5d782`, but that only verifies
@@ -165,6 +177,12 @@ rejected rather than being treated as a truncated success.
 status is counted as `unknown`, which means the result is incomplete. A successful
 summary exits zero by default. In a gate, use `--fail-on-findings`; JSON is still
 written first, then the command exits 3 when `fail` or `unknown` outcomes exist.
+Use the verification ID returned by `verify run` or `verify wait`; do not invent
+or substitute an ID. After the API update that validates the ID against the
+selected tenant is deployed, an unknown ID fails instead of producing a
+zero-outcome summary. Roll out that API update before relying on this as a gate.
+Against an older API, validate the ID from the `verify run` or `verify wait`
+response before calling `results summary`.
 
 `findings list` is tenant-wide unless `--verification` is supplied:
 

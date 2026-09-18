@@ -123,20 +123,21 @@ func TestRequestFailureClassification(t *testing.T) {
 		err       error
 		kind      api.RequestFailureKind
 		transient bool
+		message   string
 	}{
-		{"timeout", context.DeadlineExceeded, api.RequestFailureTimeout, true},
-		{"canceled", context.Canceled, api.RequestFailureCanceled, false},
-		{"network", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}, api.RequestFailureTransient, true},
-		{"invalid address", &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("secret invalid address")}, api.RequestFailurePermanent, false},
-		{"unknown", errors.New("secret unknown"), api.RequestFailurePermanent, false},
-		{"tls", x509.UnknownAuthorityError{}, api.RequestFailureTLS, false},
+		{"timeout", context.DeadlineExceeded, api.RequestFailureTimeout, true, "example.test failed: request timed out"},
+		{"canceled", context.Canceled, api.RequestFailureCanceled, false, "example.test failed: context canceled"},
+		{"network", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}, api.RequestFailureTransient, true, "example.test failed: connection refused"},
+		{"invalid address", &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("secret invalid address")}, api.RequestFailurePermanent, false, "example.test failed: network request failed"},
+		{"unknown", errors.New("secret unknown"), api.RequestFailurePermanent, false, "example.test failed: network request failed"},
+		{"tls", x509.UnknownAuthorityError{}, api.RequestFailureTLS, false, "example.test failed: certificate trust verification failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := api.New("https://example.test", "token", "tenant")
 			c.HTTP.Transport = failingTransport{tc.err}
 			_, err := c.Get(context.Background(), "/v", nil)
 			var requestErr *api.RequestError
-			if !errors.As(err, &requestErr) || requestErr.Kind != tc.kind || api.IsTransientRequestError(err) != tc.transient || strings.Contains(err.Error(), "secret") {
+			if !errors.As(err, &requestErr) || requestErr.Kind != tc.kind || api.IsTransientRequestError(err) != tc.transient || strings.Contains(err.Error(), "secret") || !strings.Contains(err.Error(), tc.message) {
 				t.Fatalf("classification: %v", err)
 			}
 		})

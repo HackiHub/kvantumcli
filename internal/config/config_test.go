@@ -90,6 +90,25 @@ func TestLoad_FileOnly(t *testing.T) {
 	}
 }
 
+func TestLoad_AllValuesFromFlagsDoesNotResolveDefaultConfigPath(t *testing.T) {
+	clearEnv(t)
+	_ = os.Unsetenv("KVANTUMCI_CONFIG")
+	_ = os.Unsetenv("XDG_CONFIG_HOME")
+	_ = os.Unsetenv("HOME")
+
+	cfg, err := config.Load(config.FlagOverrides{
+		APIURL:   "https://flag.example",
+		Token:    "flag-token",
+		TenantID: "flag-tenant",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APIURL != "https://flag.example" || cfg.Token != "flag-token" || cfg.TenantID != "flag-tenant" {
+		t.Fatalf("config = %+v", cfg)
+	}
+}
+
 func TestRequireAuth(t *testing.T) {
 	cfg := config.Config{Token: "t", TenantID: "ten"}
 	if err := cfg.RequireAuth(); err != nil {
