@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -61,6 +62,15 @@ func newProjectListCmd(opts *rootOptions) *cobra.Command {
 		Use:   "list",
 		Short: "List projects",
 		Args:  cobra.NoArgs,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if page < 1 {
+				return fmt.Errorf("invalid --page %d: must be at least 1", page)
+			}
+			if limit < 1 || limit > 100 {
+				return fmt.Errorf("invalid --limit %d: must be between 1 and 100", limit)
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(func(ctx context.Context) (any, error) {
 				client, _, err := newClient(opts, true)
@@ -72,7 +82,7 @@ func newProjectListCmd(opts *rootOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&page, "page", 1, "Page number")
-	cmd.Flags().IntVar(&limit, "limit", 10, "Page size")
+	cmd.Flags().IntVar(&limit, "limit", 10, "Page size (1-100)")
 	cmd.Flags().StringVar(&search, "search", "", "Search query")
 	cmd.Flags().StringVar(&tagsCSV, "tags", "", "Comma-separated tags")
 	return cmd

@@ -35,16 +35,21 @@ type FlagOverrides struct {
 // Load merges config file, environment, and flags.
 // Precedence: flags > env > config file > empty.
 func Load(flags FlagOverrides) (Config, error) {
-	cfg := Config{}
+	cfg := applyOverrides(Config{}, flags)
+	if cfg.APIURL != "" && cfg.Token != "" && cfg.TenantID != "" {
+		return cfg, nil
+	}
 
 	if fileCfg, err := loadFile(); err != nil {
 		return Config{}, err
 	} else if fileCfg != nil {
-		cfg.APIURL = fileCfg.APIURL
-		cfg.Token = fileCfg.Token
-		cfg.TenantID = fileCfg.TenantID
+		cfg = applyOverrides(Config{APIURL: fileCfg.APIURL, Token: fileCfg.Token, TenantID: fileCfg.TenantID}, flags)
 	}
 
+	return cfg, nil
+}
+
+func applyOverrides(cfg Config, flags FlagOverrides) Config {
 	if v := os.Getenv("KVANTUMCI_API_URL"); v != "" {
 		cfg.APIURL = v
 	}
@@ -54,7 +59,6 @@ func Load(flags FlagOverrides) (Config, error) {
 	if v := os.Getenv("KVANTUMCI_TENANT_ID"); v != "" {
 		cfg.TenantID = v
 	}
-
 	if flags.APIURL != "" {
 		cfg.APIURL = flags.APIURL
 	}
@@ -64,8 +68,7 @@ func Load(flags FlagOverrides) (Config, error) {
 	if flags.TenantID != "" {
 		cfg.TenantID = flags.TenantID
 	}
-
-	return cfg, nil
+	return cfg
 }
 
 // RequireAuth ensures token and tenant are set for ClientApi calls.

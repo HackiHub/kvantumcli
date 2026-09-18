@@ -78,6 +78,20 @@ func TestFindingsListRejectsInvalidPaginationLocally(t *testing.T) {
 	}
 }
 
+func TestProjectListRejectsInvalidPaginationLocally(t *testing.T) {
+	for name, args := range map[string][]string{
+		"page":        {"--page", "0"},
+		"small limit": {"--limit", "0"},
+		"large limit": {"--limit", "101"},
+	} {
+		cmd := newProjectListCmd(&rootOptions{})
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "invalid --") {
+			t.Errorf("%s error = %v", name, err)
+		}
+	}
+}
+
 func TestRequiredIdentifierFlags(t *testing.T) {
 	for name, cmd := range map[string]interface {
 		Execute() error
