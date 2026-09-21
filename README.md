@@ -9,8 +9,10 @@ Licensed under the [Apache License 2.0](LICENSE).
 
 ## Install
 
-The current release is `v1.0.0`. Install from that immutable tag rather than
-executing a mutable `main`-branch script.
+The first supported release version is `v1.0.0`. The installation commands
+below become available only after that release is published; until then there
+is no supported install. Always install from an explicit version tag rather
+than executing a mutable `main`-branch script.
 
 The release installers support Linux and macOS on AMD64 and ARM64, and Windows
 on AMD64 and ARM64. They download a release manifest, its detached signature,
@@ -28,6 +30,14 @@ RSA-3072 release public key. Its SHA-256 certificate fingerprint is:
 The versioned installers pin this fingerprint, verify the signed manifest, and
 then verify the selected binary's SHA-256 hash. They fail closed if any check
 fails and require HTTPS for initial requests and redirects.
+
+The certificate and installer are fetched from the same versioned repository
+ref, so initial trust comes from the HackiHub repository and the fingerprint
+documented above. The pin detects a mismatched certificate, a substituted
+download mirror, or modified release assets; it does not protect against an
+attacker able to replace both the repository ref and its installer. Verify the
+fingerprint through an independent HackiHub-controlled channel if that threat
+is in scope for your environment.
 
 Linux or macOS:
 

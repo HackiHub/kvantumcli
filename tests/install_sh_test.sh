@@ -9,6 +9,7 @@ cp "$TMP/cert.pem" "$TMP/original-cert.pem"
 openssl req -x509 -newkey rsa:3072 -nodes -days 1 -subj '/CN=kvantumci-other-test' -keyout "$TMP/other-key.pem" -out "$TMP/other-cert.pem" >/dev/null 2>&1
 fingerprint=$(openssl x509 -in "$TMP/cert.pem" -outform DER | openssl dgst -sha256 | sed 's/^.*= //')
 sed "s/7f200aeb7faf7e5158caa354d7a0c72bfcbca09ab024b8d557016b6a10aa197b/$fingerprint/g" "$ROOT/install.sh" > "$TMP/install-test.sh"
+sed 's/^PINNED_CERT_SHA256=.*/PINNED_CERT_SHA256=not-provisioned/' "$ROOT/install.sh" > "$TMP/install-unprovisioned.sh"
 for asset in kvantumci-darwin-amd64 kvantumci-darwin-arm64 kvantumci-linux-amd64 kvantumci-linux-arm64 kvantumci-windows-amd64.exe kvantumci-windows-arm64.exe; do
     printf 'new binary: %s\n' "$asset" > "$TMP/mirror/v1.2.3/$asset"
 done
@@ -131,8 +132,8 @@ set -e
 [ "$status" -eq 143 ] || { echo "interrupted installer exited with $status, expected 143" >&2; exit 1; }
 [ -z "$(ls -A "$TMP/work")" ] || { echo 'interrupt left temporary files' >&2; exit 1; }
 [ "$(cat "$TMP/install/kvantumci")" = 'old binary' ]
-if KVANTUMCI_PUBLIC_KEY_FILE= sh "$TMP/install-test.sh" > "$TMP/stdout" 2> "$TMP/stderr"; then echo 'missing trust root accepted' >&2; exit 1; fi
+assert_refused 'KVANTUMCI_PUBLIC_KEY_FILE must name a trusted X.509 certificate PEM file' env KVANTUMCI_PUBLIC_KEY_FILE= sh "$TMP/install-test.sh"
 if KVANTUMCI_DOWNLOAD_BASE_URL=http://fixture.invalid sh "$TMP/install-test.sh" > "$TMP/stdout" 2> "$TMP/stderr"; then echo 'HTTP mirror accepted' >&2; exit 1; fi
-if sh "$ROOT/install.sh" > "$TMP/stdout" 2> "$TMP/stderr"; then echo 'unprovisioned production installer accepted' >&2; exit 1; fi
+assert_refused 'installer trust root has not been provisioned' sh "$TMP/install-unprovisioned.sh"
 [ "$(cat "$TMP/install/kvantumci")" = 'old binary' ]
 echo 'Unix installer checks passed'
