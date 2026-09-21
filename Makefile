@@ -1,6 +1,7 @@
 # Binary name
 BIN := kvantumci
 CMD := ./cmd/kvantumci
+RELEASE_SIGNING_CERT_FILE ?= release-signing-cert.pem
 
 .PHONY: build
 build:

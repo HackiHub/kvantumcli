@@ -5,31 +5,53 @@ It produces JSON on standard output so scripts can create projects and
 repositories, run verifications, and inspect results without destructive or
 administrative API operations.
 
+Licensed under the [Apache License 2.0](LICENSE).
+
 ## Install
 
-No signed KvantumCI release or release tag is currently published. Do not use a
-`latest` or made-up version bootstrap command. Build from this checkout until a
-published release supplies the signed assets described below.
+The current release is `v1.0.0`. Install from that immutable tag rather than
+executing a mutable `main`-branch script.
 
 The release installers support Linux and macOS on AMD64 and ARM64, and Windows
 on AMD64 and ARM64. They download a release manifest, its detached signature,
 and the platform binary. Installation proceeds only when the manifest signature
 and the binary's SHA-256 hash verify.
 
-The installer needs a trusted X.509 PEM certificate containing the release
-RSA-3072 public key. Obtain the installer from an immutable, reviewed source and
-the certificate through a trusted channel independent of release assets. Set
-`KVANTUMCI_PUBLIC_KEY_FILE` to the local certificate path before running either
-installer. Do not obtain that certificate from the same mutable release download
-being verified.
+The installer needs the repository's trusted
+[`release-signing-cert.pem`](release-signing-cert.pem), which contains the
+RSA-3072 release public key. Its SHA-256 certificate fingerprint is:
 
-Once a signed release and its immutable bootstrap location are published, use
-the release's documented command and certificate fingerprint. Each versioned
-installer pins the SHA-256 fingerprint of the certificate's DER bytes; it first
-checks the local PEM against that pin, then verifies the manifest signature.
-The installers fail closed if the pinned fingerprint has not been provisioned,
-or if the certificate, signature, manifest, URL, or binary hash is invalid.
-They require HTTPS for initial requests and redirects.
+```text
+7f200aeb7faf7e5158caa354d7a0c72bfcbca09ab024b8d557016b6a10aa197b
+```
+
+The versioned installers pin this fingerprint, verify the signed manifest, and
+then verify the selected binary's SHA-256 hash. They fail closed if any check
+fails and require HTTPS for initial requests and redirects.
+
+Linux or macOS:
+
+```bash
+version=v1.0.0
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  --output release-signing-cert.pem \
+  "https://raw.githubusercontent.com/HackiHub/kvantumcli/$version/release-signing-cert.pem"
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  --output install.sh \
+  "https://raw.githubusercontent.com/HackiHub/kvantumcli/$version/install.sh"
+KVANTUMCI_PUBLIC_KEY_FILE="$PWD/release-signing-cert.pem" \
+  sh ./install.sh --version "$version"
+```
+
+Windows PowerShell:
+
+```powershell
+$version = 'v1.0.0'
+Invoke-WebRequest "https://raw.githubusercontent.com/HackiHub/kvantumcli/$version/release-signing-cert.pem" -OutFile release-signing-cert.pem
+Invoke-WebRequest "https://raw.githubusercontent.com/HackiHub/kvantumcli/$version/install.ps1" -OutFile install.ps1
+$env:KVANTUMCI_PUBLIC_KEY_FILE = (Resolve-Path .\release-signing-cert.pem)
+.\install.ps1 -Version $version
+```
 
 | Setting | POSIX installer | PowerShell installer | Default |
 | --- | --- | --- | --- |
@@ -49,7 +71,7 @@ installation leaves an existing destination binary in place.
 
 ## Build
 
-Requires Go 1.24.5.
+Requires Go 1.26.6.
 
 ```bash
 make build          # bin/kvantumci
@@ -138,8 +160,12 @@ repository. Git integrations need a branch as well:
 kvantumci integration resources github --integration <integration-uuid>
 kvantumci integration branches github <resource-id> --integration <integration-uuid>
 kvantumci repo add --project <project-uuid> --integration <integration-uuid> \
-  --name my-repo --resource-id <resource-id> --branch <branch-name>
+  --name my-repo --resource-id <resource-id> \
+  --repository-url <repository-url> --branch <branch-name>
 ```
+
+For Git integrations, use the resource's returned `url` as
+`--repository-url`. The API requires the repository URL and branch.
 
 For a repository run, the deployed API must return the typed repository-run
 contract from API PR #419: a wrapped response with the verification ID at

@@ -8,7 +8,7 @@ openssl req -x509 -newkey rsa:3072 -nodes -days 1 -subj '/CN=kvantumci-installer
 cp "$TMP/cert.pem" "$TMP/original-cert.pem"
 openssl req -x509 -newkey rsa:3072 -nodes -days 1 -subj '/CN=kvantumci-other-test' -keyout "$TMP/other-key.pem" -out "$TMP/other-cert.pem" >/dev/null 2>&1
 fingerprint=$(openssl x509 -in "$TMP/cert.pem" -outform DER | openssl dgst -sha256 | sed 's/^.*= //')
-sed "s/PROVISION_PRODUCTION_CERT_SHA256/$fingerprint/g" "$ROOT/install.sh" > "$TMP/install-test.sh"
+sed "s/7f200aeb7faf7e5158caa354d7a0c72bfcbca09ab024b8d557016b6a10aa197b/$fingerprint/g" "$ROOT/install.sh" > "$TMP/install-test.sh"
 for asset in kvantumci-darwin-amd64 kvantumci-darwin-arm64 kvantumci-linux-amd64 kvantumci-linux-arm64 kvantumci-windows-amd64.exe kvantumci-windows-arm64.exe; do
     printf 'new binary: %s\n' "$asset" > "$TMP/mirror/v1.2.3/$asset"
 done
