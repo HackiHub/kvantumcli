@@ -238,6 +238,47 @@ kvantumci verify run --project <uuid> --all-repos --confirm
 See [CLI_OPERATIONS.md](CLI_OPERATIONS.md) for the command reference. DELETE,
 credential/token, and administrative writes are excluded.
 
+## Agent skill
+
+The standalone [KvantumCI skill](skills/kvantumci/SKILL.md) teaches agents to
+use an installed `kvantumci` binary. Install the binary first using the
+versioned release instructions above, then place the skill file in your
+personal skills directory. Use the skill from the same release tag as your
+binary so its command guidance matches the installed version.
+
+| Agent | Personal skill file |
+| --- | --- |
+| Codex | `~/.agents/skills/kvantumci/SKILL.md` |
+| Claude Code | `~/.claude/skills/kvantumci/SKILL.md` |
+| Cursor | `~/.cursor/skills/kvantumci/SKILL.md` |
+
+After the release is published, download the file from its version tag. For
+macOS or Linux, set `skill_dir` to the directory for your agent from the table:
+
+```bash
+version=v1.0.0
+skill_dir="$HOME/.agents/skills/kvantumci" # Codex; use the table for Claude Code or Cursor
+mkdir -p "$skill_dir"
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  --output "$skill_dir/SKILL.md" \
+  "https://raw.githubusercontent.com/HackiHub/kvantumcli/$version/skills/kvantumci/SKILL.md"
+```
+
+For Windows PowerShell, set `$skillDir` to the directory for your agent:
+
+```powershell
+$version = 'v1.0.0'
+$skillDir = Join-Path $HOME '.agents/skills/kvantumci' # Codex; use the table for Claude Code or Cursor
+New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
+Invoke-WebRequest "https://raw.githubusercontent.com/HackiHub/kvantumcli/$version/skills/kvantumci/SKILL.md" -OutFile (Join-Path $skillDir 'SKILL.md')
+```
+
+The skill file is downloaded over HTTPS from a version tag, but it is not
+covered by the signed release manifest or a checksum. Trust in these commands
+comes from the HackiHub repository and the selected tag. Review the downloaded
+`SKILL.md` before enabling it, especially its instructions for credentials and
+commands the agent may run.
+
 ## Extending
 
 1. Add an API method under `internal/api/`.

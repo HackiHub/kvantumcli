@@ -16,3 +16,11 @@
   be `origin/<branch-name>`.
 - Never push feature work to `main`, or configure a push refspec targeting `main`.
   A direct push to `main` requires an explicit user request for that action.
+
+## User skill maintenance
+
+The distributable [`kvantumci` skill](skills/kvantumci/SKILL.md) is for users
+running an installed CLI outside this repository. Keep it self-contained: do
+not make it depend on this checkout, `bin/`, or local documentation paths.
+When changing user-visible commands, flags, or output contracts, check whether
+the skill and its installation instructions in `README.md` need updating.
