@@ -45,7 +45,7 @@ Create body: `{ name, parentId?, icon?, tags? }`. Tags are comma-separated, trim
 
 | CLI command | Description | API |
 | --- | --- | --- |
-| `repo add --project <uuid> --integration <uuid> --name <name> [--branch <name>] [--resource-id <id>] [--resource-url <url>] [--repository-url <url>]` | Add repository to a project | `POST /projects/repository` |
+| `repo add --project <uuid> --integration <uuid> --name <name> [--branch <name>] [--resource-id <id>] [--resource-url <url>] [--repository-url <url>]` | Add repository to a project; Git integrations require branch, resource ID, and repository URL | `POST /projects/repository` |
 | `repo list --project <uuid> [--page 1] [--limit 10]` | List project repositories | `GET /projects/repository/list?projectId=<uuid>` |
 | `repo get <repoId>` | Get repository detail | `GET /projects/repository/{id}` |
 
@@ -66,8 +66,9 @@ Providers: `github`, `gitlab`, `jenkins`, `nexus`, `jfrog`, `azure_repos`, and
 When a tenant has more than one integration for a provider, pass its ID from
 `integration list` as `--integration`. The CLI checks that the selected
 integration belongs to the positional provider before discovery. Use the
-returned resource ID with `repo add --integration <uuid> --resource-id <id>`;
-Git integrations also require a branch selected with `integration branches`.
+returned resource ID and URL with `repo add --integration <uuid>
+--resource-id <id> --repository-url <url>`; Git integrations also require a
+branch selected with `integration branches`.
 
 ## Verifications
 

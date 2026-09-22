@@ -107,7 +107,7 @@ func TestWindowsInstaller(t *testing.T) {
 	}
 	certHash := sha256.Sum256(certDER)
 	installer = filepath.Join(tmp, "install-test.ps1")
-	if err := os.WriteFile(installer, []byte(strings.ReplaceAll(string(installerSource), "PROVISION_PRODUCTION_CERT_SHA256", fmt.Sprintf("%x", certHash))), 0600); err != nil {
+	if err := os.WriteFile(installer, []byte(strings.ReplaceAll(string(installerSource), "7f200aeb7faf7e5158caa354d7a0c72bfcbca09ab024b8d557016b6a10aa197b", fmt.Sprintf("%x", certHash))), 0600); err != nil {
 		t.Fatal(err)
 	}
 	runner := filepath.Join(tmp, "run.ps1")
@@ -230,7 +230,7 @@ try {
 		}
 		seamSource = strings.Replace(seamSource, old, replacement, 1)
 	}
-	seamSource = strings.ReplaceAll(seamSource, "PROVISION_PRODUCTION_CERT_SHA256", fmt.Sprintf("%x", certHash))
+	seamSource = strings.ReplaceAll(seamSource, "7f200aeb7faf7e5158caa354d7a0c72bfcbca09ab024b8d557016b6a10aa197b", fmt.Sprintf("%x", certHash))
 	seamInstaller := filepath.Join(tmp, "install-seam.ps1")
 	if err := os.WriteFile(seamInstaller, []byte(seamSource), 0600); err != nil {
 		t.Fatal(err)

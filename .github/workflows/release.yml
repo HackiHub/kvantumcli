@@ -89,21 +89,21 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag }}
           SIGNING_KEY_PEM: ${{ secrets.KVANTUMCI_SIGNING_KEY_PEM }}
-          SIGNING_CERT_PEM: ${{ secrets.KVANTUMCI_SIGNING_CERT_PEM }}
         shell: bash
         run: |
           set -euo pipefail
           umask 077
-          test -n "$SIGNING_KEY_PEM" && test -n "$SIGNING_CERT_PEM"
+          test -n "$SIGNING_KEY_PEM"
           printf '%s\n' "$SIGNING_KEY_PEM" > "$RUNNER_TEMP/signing-key.pem"
-          printf '%s\n' "$SIGNING_CERT_PEM" > "$RUNNER_TEMP/signing-cert.pem"
           chmod 600 "$RUNNER_TEMP/signing-key.pem"
+          git show "refs/tags/$RELEASE_TAG:release-signing-cert.pem" > "$RUNNER_TEMP/tag-release-signing-cert.pem"
+          cmp release-signing-cert.pem "$RUNNER_TEMP/tag-release-signing-cert.pem"
           openssl pkey -in "$RUNNER_TEMP/signing-key.pem" -pubout > "$RUNNER_TEMP/from-key.pem"
-          openssl x509 -in "$RUNNER_TEMP/signing-cert.pem" -pubkey -noout > "$RUNNER_TEMP/from-cert.pem"
+          openssl x509 -in "$RUNNER_TEMP/tag-release-signing-cert.pem" -pubkey -noout > "$RUNNER_TEMP/from-cert.pem"
           cmp "$RUNNER_TEMP/from-key.pem" "$RUNNER_TEMP/from-cert.pem"
           openssl rsa -pubin -in "$RUNNER_TEMP/from-key.pem" -noout -text > "$RUNNER_TEMP/rsa-public.txt"
           grep -Eq '^(RSA )?Public-Key: \(3072 bit\)$' "$RUNNER_TEMP/rsa-public.txt"
-          fingerprint=$(openssl x509 -in "$RUNNER_TEMP/signing-cert.pem" -outform DER | openssl dgst -sha256 | sed 's/^.*= //')
+          fingerprint=$(openssl x509 -in "$RUNNER_TEMP/tag-release-signing-cert.pem" -outform DER | openssl dgst -sha256 | sed 's/^.*= //')
           grep -Fqx "PINNED_CERT_SHA256=$fingerprint" install.sh
           grep -Fqx "\$PinnedCertificateSha256 = '$fingerprint'" install.ps1
           git show "refs/tags/$RELEASE_TAG:install.sh" | grep -Fqx "PINNED_CERT_SHA256=$fingerprint"
@@ -137,4 +137,4 @@ jobs:
       - name: Remove temporary signing key
         if: always()
         shell: bash
-        run: rm -f "$RUNNER_TEMP/signing-key.pem" "$RUNNER_TEMP/signing-cert.pem" "$RUNNER_TEMP/from-key.pem" "$RUNNER_TEMP/from-cert.pem" "$RUNNER_TEMP/rsa-public.txt"
+        run: rm -f "$RUNNER_TEMP/signing-key.pem" "$RUNNER_TEMP/tag-release-signing-cert.pem" "$RUNNER_TEMP/from-key.pem" "$RUNNER_TEMP/from-cert.pem" "$RUNNER_TEMP/rsa-public.txt"

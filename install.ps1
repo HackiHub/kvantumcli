@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 $repository = if ($env:KVANTUMCI_REPOSITORY) { $env:KVANTUMCI_REPOSITORY } else { 'HackiHub/kvantumcli' }
 $mirror = $env:KVANTUMCI_DOWNLOAD_BASE_URL
 $certificatePath = $env:KVANTUMCI_PUBLIC_KEY_FILE
-$PinnedCertificateSha256 = 'PROVISION_PRODUCTION_CERT_SHA256'
+$PinnedCertificateSha256 = '7f200aeb7faf7e5158caa354d7a0c72bfcbca09ab024b8d557016b6a10aa197b'
 function Assert-HttpsUrl([string] $Value, [bool] $AllowQuery = $false) {
     $uri = $null
     if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref] $uri) -or

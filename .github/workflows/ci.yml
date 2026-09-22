@@ -26,6 +26,13 @@ jobs:
             printf 'Unformatted Go files:\n%s\n' "$unformatted"
             exit 1
           fi
+      - name: Check release certificate pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          fingerprint=$(openssl x509 -in release-signing-cert.pem -outform DER | openssl dgst -sha256 | sed 's/^.*= //')
+          grep -Fqx "PINNED_CERT_SHA256=$fingerprint" install.sh
+          grep -Fqx "\$PinnedCertificateSha256 = '$fingerprint'" install.ps1
 
   test:
     name: Test (${{ matrix.os }})
