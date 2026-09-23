@@ -1,0 +1,140 @@
+name: Signed release draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vX.Y.Z tag to package
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate tag syntax before checkout
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+
+  build:
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      source_commit: ${{ steps.source.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - id: source
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+      - name: Build six platform assets without signing credentials
+        run: |
+          make clean
+          make dist
+      - name: Rebuild from the same commit in a separate path and compare assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/rebuild"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/rebuild"
+          (cd "$RUNNER_TEMP/rebuild" && make dist)
+          for asset in dist/kvantumci-*; do
+            cmp "$asset" "$RUNNER_TEMP/rebuild/$asset"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-binaries
+          path: dist/kvantumci-*
+          if-no-files-found: error
+          retention-days: 1
+
+  draft:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check immutable build commit and trusted mainline ancestry
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          BUILD_COMMIT: ${{ needs.build.outputs.source_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          tag_commit=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+          test "$tag_commit" = "$BUILD_COMMIT"
+          git merge-base --is-ancestor "$tag_commit" HEAD
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-binaries
+          path: dist
+      - name: Check provisioned trust root and signing identity
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          SIGNING_KEY_PEM: ${{ secrets.KVANTUMCI_SIGNING_KEY_PEM }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$SIGNING_KEY_PEM"
+          printf '%s\n' "$SIGNING_KEY_PEM" > "$RUNNER_TEMP/signing-key.pem"
+          chmod 600 "$RUNNER_TEMP/signing-key.pem"
+          git show "refs/tags/$RELEASE_TAG:release-signing-cert.pem" > "$RUNNER_TEMP/tag-release-signing-cert.pem"
+          cmp release-signing-cert.pem "$RUNNER_TEMP/tag-release-signing-cert.pem"
+          openssl pkey -in "$RUNNER_TEMP/signing-key.pem" -pubout > "$RUNNER_TEMP/from-key.pem"
+          openssl x509 -in "$RUNNER_TEMP/tag-release-signing-cert.pem" -pubkey -noout > "$RUNNER_TEMP/from-cert.pem"
+          cmp "$RUNNER_TEMP/from-key.pem" "$RUNNER_TEMP/from-cert.pem"
+          openssl rsa -pubin -in "$RUNNER_TEMP/from-key.pem" -noout -text > "$RUNNER_TEMP/rsa-public.txt"
+          grep -Eq '^(RSA )?Public-Key: \(3072 bit\)$' "$RUNNER_TEMP/rsa-public.txt"
+          fingerprint=$(openssl x509 -in "$RUNNER_TEMP/tag-release-signing-cert.pem" -outform DER | openssl dgst -sha256 | sed 's/^.*= //')
+          grep -Fqx "PINNED_CERT_SHA256=$fingerprint" install.sh
+          grep -Fqx "\$PinnedCertificateSha256 = '$fingerprint'" install.ps1
+          git show "refs/tags/$RELEASE_TAG:install.sh" | grep -Fqx "PINNED_CERT_SHA256=$fingerprint"
+          git show "refs/tags/$RELEASE_TAG:install.ps1" | grep -Fqx "\$PinnedCertificateSha256 = '$fingerprint'"
+      - name: Create and sign deterministic manifest
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=(kvantumci-darwin-amd64 kvantumci-darwin-arm64 kvantumci-linux-amd64 kvantumci-linux-arm64 kvantumci-windows-amd64.exe kvantumci-windows-arm64.exe)
+          test "$(find dist -maxdepth 1 -type f -name 'kvantumci-*' | wc -l)" -eq 6
+          {
+            printf 'kvantumci-release-v1\nversion %s\n' "$RELEASE_TAG"
+            for asset in "${assets[@]}"; do
+              test -s "dist/$asset"
+              hash=$(openssl dgst -sha256 "dist/$asset" | sed 's/^.*= //')
+              printf 'sha256 %s %s\n' "$hash" "$asset"
+            done
+          } > dist/release-manifest.txt
+          openssl dgst -sha256 -sign "$RUNNER_TEMP/signing-key.pem" -out dist/release-manifest.sig dist/release-manifest.txt
+          openssl dgst -sha256 -verify "$RUNNER_TEMP/from-cert.pem" -signature dist/release-manifest.sig dist/release-manifest.txt
+      - name: Create draft with signed assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" dist/kvantumci-* dist/release-manifest.txt dist/release-manifest.sig --verify-tag --draft --title "$RELEASE_TAG" --notes 'Signed release assets. Review before publishing.'
+      - name: Remove temporary signing key
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/signing-key.pem" "$RUNNER_TEMP/tag-release-signing-cert.pem" "$RUNNER_TEMP/from-key.pem" "$RUNNER_TEMP/from-cert.pem" "$RUNNER_TEMP/rsa-public.txt"

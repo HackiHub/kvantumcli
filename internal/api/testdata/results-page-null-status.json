@@ -1,0 +1,12 @@
+{
+  "data": [
+    {"status": "pass", "finding": {"severity": "high"}},
+    {"status": "fail", "finding": {"severity": "critical"}},
+    {"status": null, "finding": {"severity": "medium"}}
+  ],
+  "total": 3,
+  "page": 1,
+  "limit": 100,
+  "lastPage": 1,
+  "hasNext": false
+}
