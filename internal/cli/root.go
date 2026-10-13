@@ -53,6 +53,7 @@ func newRootCmd(opts *rootOptions) *cobra.Command {
 	cmd.AddCommand(newWhoamiCmd(opts))
 	cmd.AddCommand(newProjectCmd(opts))
 	cmd.AddCommand(newRepoCmd(opts))
+	cmd.AddCommand(newRegistrationCmd(opts))
 	cmd.AddCommand(newIntegrationCmd(opts))
 	cmd.AddCommand(newVerifyCmd(opts))
 	cmd.AddCommand(newSbomCmd(opts))
