@@ -113,6 +113,21 @@ Permission: `verification:run` and `verification:read`.
 
 Permission: `billofmaterials:read`.
 
+## Template registrations
+
+| CLI command | Description | API |
+| --- | --- | --- |
+| `registration add --repo <uuid> --ref <tag-or-sha> --type <TAG\|SHA>` | Register an exact tag or commit SHA of a template repository | `POST /capabilities/registrations` |
+| `registration list [--repo <uuid>] [--page 1] [--limit 20]` | List active registrations in the tenant | `GET /capabilities/registrations` |
+| `registration refresh <registrationId>` | Queue a reconciliation of a TAG registration | `POST /capabilities/registrations/{id}/refresh` |
+
+`--type` is case-insensitive. `--ref` for a tag is a bare tag name; a SHA must be a lowercase 40- or
+64-character commit hash. BRANCH registrations cannot be created manually, and
+`refresh` accepts TAG registrations only. `limit` ranges from `1` to `100`.
+
+Permission: `project:repository:create` for `add` and `refresh`;
+`project:repository:read` for `list`.
+
 ## Findings and results
 
 | CLI command | Description | API |
@@ -165,7 +180,7 @@ verification ID before treating a run as complete.
 
 | Category | Examples |
 | --- | --- |
-| DELETE | `/projects/{id}`, `/projects/repository/{id}`, `/verifications/{id}`, `/bill-of-materials/{id}` |
+| DELETE | `/projects/{id}`, `/projects/repository/{id}`, `/capabilities/registrations/{id}`, `/verifications/{id}`, `/bill-of-materials/{id}` |
 | Credentials and tokens | `POST /tokens/*`, `POST/PUT /integrations` |
 | Admin and policy writes | Rules, labels, roles, settings, SSO, billing, tenants |
 | Internal and worker | `PATCH /verifications/results/{verificationId}` |

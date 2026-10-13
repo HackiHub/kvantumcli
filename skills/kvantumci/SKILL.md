@@ -19,6 +19,7 @@ Use the installed `kvantumci` executable for the user's requested KvantumCI oper
 - Projects: `project list`, `project get <projectId>`, `project create --name <name>`.
 - Integrations: `integration list`; `integration resources <provider> --integration <integrationId>`; `integration branches <provider> <resourceId> --integration <integrationId>`. Select an explicit integration ID when a provider has more than one integration.
 - Repositories: `repo list --project <projectId>`, `repo get <repoId>`, `repo add --project <projectId> --integration <integrationId> --name <name>`. For Git integrations, use the discovered resource ID and URL as `--resource-id` and `--repository-url`, and pass a discovered branch with `--branch`.
+- Template registrations: `registration list [--repo <repoId>]`, `registration add --repo <repoId> --ref <tagOrSha> --type TAG|SHA`, `registration refresh <registrationId>` (TAG registrations only).
 - Verifications: `verify list`, `verify get <verificationId>`, `verify latest --repo <repoId>` (latest *finished* run only).
 - Findings and results: `findings list --verification <verificationId> --status fail`, `results list --verification <verificationId>`, `results get <resultId>`, `results summary --verification <verificationId>`.
 - BOMs: `sbom get --verification <verificationId> --repo <repoId>`, `sbom list --verification <verificationId> --repo <repoId> --type sbom`.
