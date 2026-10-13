@@ -121,7 +121,7 @@ Permission: `billofmaterials:read`.
 | `registration list [--repo <uuid>] [--page 1] [--limit 20]` | List active registrations in the tenant | `GET /capabilities/registrations` |
 | `registration refresh <registrationId>` | Queue a reconciliation of a TAG registration | `POST /capabilities/registrations/{id}/refresh` |
 
-`--ref` for a tag is a bare tag name; a SHA must be a lowercase 40- or
+`--type` is case-insensitive. `--ref` for a tag is a bare tag name; a SHA must be a lowercase 40- or
 64-character commit hash. BRANCH registrations cannot be created manually, and
 `refresh` accepts TAG registrations only. `limit` ranges from `1` to `100`.
 

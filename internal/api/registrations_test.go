@@ -36,9 +36,12 @@ func TestTemplateRegistrationRequests(t *testing.T) {
 		`GET /capabilities/registrations?limit=5&page=2&projectRepositoryId=r1 `,
 		`POST /capabilities/registrations/id%2F1/refresh `,
 	}
+	if len(calls) != len(want) {
+		t.Fatalf("calls = %q, want %q", calls, want)
+	}
 	for i, w := range want {
-		if i >= len(calls) || calls[i] != w {
-			t.Errorf("call %d = %q, want %q", i, calls, w)
+		if calls[i] != w {
+			t.Errorf("call %d = %q, want %q", i, calls[i], w)
 		}
 	}
 }

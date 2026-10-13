@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -27,6 +28,13 @@ func newRegistrationAddCmd(opts *rootOptions) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(func(ctx context.Context) (any, error) {
+				normalizedType := strings.ToUpper(refType)
+				if !uuidPattern.MatchString(repoID) {
+					return nil, fail("invalid --repo %q: must be a UUID", repoID)
+				}
+				if normalizedType != "TAG" && normalizedType != "SHA" {
+					return nil, fail("invalid --type %q: must be TAG or SHA", refType)
+				}
 				client, _, err := newClient(opts, true)
 				if err != nil {
 					return nil, err
@@ -34,7 +42,7 @@ func newRegistrationAddCmd(opts *rootOptions) *cobra.Command {
 				return client.CreateTemplateRegistration(ctx, api.CreateTemplateRegistrationRequest{
 					ProjectRepositoryID: repoID,
 					RequestedRef:        ref,
-					RefType:             refType,
+					RefType:             normalizedType,
 				})
 			})
 		},
@@ -57,6 +65,12 @@ func newRegistrationListCmd(opts *rootOptions) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(func(ctx context.Context) (any, error) {
+				if repoID != "" && !uuidPattern.MatchString(repoID) {
+					return nil, fail("invalid --repo %q: must be a UUID", repoID)
+				}
+				if page < 1 || limit < 1 || limit > 100 {
+					return nil, fail("invalid pagination: --page must be at least 1 and --limit must be 1-100")
+				}
 				client, _, err := newClient(opts, true)
 				if err != nil {
 					return nil, err
@@ -78,6 +92,9 @@ func newRegistrationRefreshCmd(opts *rootOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJSON(func(ctx context.Context) (any, error) {
+				if !uuidPattern.MatchString(args[0]) {
+					return nil, fail("invalid registration ID %q: must be a UUID", args[0])
+				}
 				client, _, err := newClient(opts, true)
 				if err != nil {
 					return nil, err
