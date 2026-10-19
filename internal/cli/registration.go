@@ -35,6 +35,10 @@ func newRegistrationAddCmd(opts *rootOptions) *cobra.Command {
 				if normalizedType != "TAG" && normalizedType != "SHA" {
 					return nil, fail("invalid --type %q: must be TAG or SHA", refType)
 				}
+				ref = strings.TrimSpace(ref)
+				if ref == "" {
+					return nil, fail("invalid --ref: must not be empty")
+				}
 				client, _, err := newClient(opts, true)
 				if err != nil {
 					return nil, err
