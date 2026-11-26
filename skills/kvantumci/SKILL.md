@@ -23,7 +23,7 @@ Use the installed `kvantumci` executable for the user's requested KvantumCI oper
 - Findings and results: `findings list --verification <verificationId> --status fail`, `results list --verification <verificationId>`, `results get <resultId>`, `results summary --verification <verificationId>`.
 - BOMs: `sbom get --verification <verificationId> --repo <repoId>`, `sbom list --verification <verificationId> --repo <repoId> --type sbom`.
 
-Use IDs returned by the CLI or supplied by the user. Inspect list/detail output before selecting among ambiguous matches. `findings list` without `--verification` reads the whole tenant.
+Use IDs returned by the CLI or supplied by the user. Inspect list/detail output before selecting among ambiguous matches. `findings list` without `--verification` reads every project the token creator can access: the whole organization for an unrestricted member, only their teams' projects for a member limited to their teams.
 
 ## Run and inspect a verification
 
