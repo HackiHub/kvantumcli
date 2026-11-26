@@ -56,7 +56,7 @@ Permission: `project:repository:create`.
 
 | CLI command | Description | API |
 | --- | --- | --- |
-| `integration list` | List tenant integrations | `GET /integrations` |
+| `integration list` | List integrations the token creator can access | `GET /integrations` |
 | `integration resources <provider> [--integration <uuid>]` | List provider repositories/resources | `GET /integrations/{provider}/resources` or `GET /integrations/byintegration/{uuid}/resources` |
 | `integration branches <provider> <resourceId> [--integration <uuid>]` | List branches for a resource | `GET /integrations/{provider}/resources/{resourceId}/branches` or `GET /integrations/byintegration/{uuid}/resources/{resourceId}/branches` |
 
@@ -117,12 +117,14 @@ Permission: `billofmaterials:read`.
 
 | CLI command | Description | API |
 | --- | --- | --- |
-| `findings list [--verification <uuid>] [--status fail\|pass\|skip] [--page 1] [--limit 10]` | List rule-check outcomes across the tenant, or one verification | `GET /results` |
+| `findings list [--verification <uuid>] [--status fail\|pass\|skip] [--page 1] [--limit 10]` | List rule-check outcomes the token creator can access, or one verification | `GET /results` |
 | `results summary --verification <uuid> [--timeout 5m] [--fail-on-findings]` | Fetch every result page and summarize one verification | `GET /results` |
 | `results list [--verification <uuid>] [--page 1] [--limit 10]` | List raw rule-check results | `GET /results` |
 | `results get <resultId>` | Get one result with evidence | `GET /results/{id}` |
 
-`findings list` is tenant-wide when `--verification` is omitted. The optional
+When `--verification` is omitted, `findings list` covers every project the
+token creator can access: the whole organization for an unrestricted member,
+only their teams' projects for a member limited to their teams. The optional
 `--status` filter accepts `fail`, `pass`, or `skip`. `page` defaults to `1` and
 `limit` defaults to `10`, with values from `1` to `100`.
 
@@ -177,3 +179,21 @@ verification ID before treating a run as complete.
 `project:read`, `project:create`, `project:repository:read`,
 `project:repository:create`, `integrations:read`, `verification:run`,
 `verification:read`, `billofmaterials:read`, and `results:read`.
+
+## Teams access
+
+An API token (PAT or GAT) acts with the current team access of the member who
+created it. Results from every command follow that access:
+
+- An unrestricted member, or a GAT minted by a superadmin, reads the whole
+  organization.
+- A member limited to their teams sees only those teams' projects and the
+  findings, results, and verifications that belong to them.
+- Changes to team membership or to a member's access take effect on the next
+  call. The token does not need to be recreated.
+- A limited member gets an empty `integration list`.
+- A project outside the member's teams answers "not found", the same as a
+  project that does not exist.
+- A refused write prints the API's error code.
+
+Teams are managed in the web app. The CLI cannot create, edit, or assign them.

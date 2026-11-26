@@ -220,7 +220,9 @@ zero-outcome summary. Roll out that API update before relying on this as a gate.
 Against an older API, validate the ID from the `verify run` or `verify wait`
 response before calling `results summary`.
 
-`findings list` is tenant-wide unless `--verification` is supplied:
+Unless `--verification` is supplied, `findings list` covers every project the
+token creator can access: the whole organization for an unrestricted member,
+only their teams' projects for a member limited to their teams:
 
 ```bash
 kvantumci findings list --status fail
